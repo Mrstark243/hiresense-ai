@@ -24,6 +24,14 @@ STOP_WORDS = {
     'plus', 'degree', 'bachelors'
 }
 
+from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
+class SharedEmbeddingFunction(EmbeddingFunction):
+    def __init__(self, model):
+        self.model = model
+    def __call__(self, input: Documents) -> Embeddings:
+        return self.model.encode(input).tolist()
+
+
 class ScoringEngine:
     def __init__(self):
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -37,7 +45,7 @@ class ScoringEngine:
         self.chroma_client = chromadb.PersistentClient(path="./chroma_db")
         self.collection = self.chroma_client.get_or_create_collection(
             name="resumes",
-            embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(model_name='all-MiniLM-L6-v2')
+            embedding_function=SharedEmbeddingFunction(self.model)
         )
 
     def extract_entities(self, text: str) -> Dict:

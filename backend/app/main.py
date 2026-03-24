@@ -8,10 +8,8 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import analyze, ranking
 from .config import settings
-from .services.scoring import ScoringEngine
 
 app = FastAPI(title=settings.APP_NAME)
-engine = ScoringEngine()
 
 # Set up CORS
 app.add_middleware(

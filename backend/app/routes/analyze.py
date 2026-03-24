@@ -1,8 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from ..services.parser import ResumeParser
-from ..services.embedding import EmbeddingService
-from ..services.retriever import VectorStore
-from ..services.analyzer import Analyzer
 from ..utils.chunking import semantic_chunking
 from ..services.scoring import ScoringEngine
 from ..models.schemas import AnalysisResponse
@@ -11,10 +8,7 @@ import os
 import tempfile
 
 router = APIRouter()
-embedding_service = EmbeddingService()
-vector_store = VectorStore()
 scoring_engine = ScoringEngine()
-analyzer = Analyzer(scoring_engine)
 
 @router.post("/analyze")
 async def analyze_resume(
