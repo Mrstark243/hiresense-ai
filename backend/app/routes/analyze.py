@@ -28,6 +28,7 @@ async def analyze_resume(
         tmp_path = tmp.name
 
     try:
+        print("DEBUG: Extracting text from PDF...")
         # 1. Parse
         parser = ResumeParser()
         raw_text = parser.extract_text(tmp_path)
@@ -36,9 +37,14 @@ async def analyze_resume(
         if not clean_text:
             raise HTTPException(status_code=400, detail="Could not extract text from PDF.")
 
-        # 2. Analyze using the NEW ScoringEngine logic (ChromaDB + spaCy)
+        print("DEBUG: Fetching the ScoringEngine and loading ML models into RAM...")
+        # 2. Analyze using the NEW ScoringEngine logic
         engine = get_scoring_engine()
+        
+        print("DEBUG: Running ML model Analysis (This is where it usually crashes if Out of Memory)...")
         analysis = engine.analyze(clean_text, jd)
+        
+        print("DEBUG: Analysis successfully finished! Returning result to Frontend...")
         return analysis
     
     finally:
