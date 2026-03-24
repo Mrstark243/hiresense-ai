@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8080/api';
+// This tells Vite: "Use the Vercel variable if it exists, otherwise fallback to localhost for local testing"
+const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:8080/api';
+
 
 const api = axios.create({
   baseURL: API_BASE_URL,
