@@ -1,7 +1,5 @@
 import re
 from typing import List, Dict
-import chromadb
-from chromadb.utils import embedding_functions
 import spacy
 from sentence_transformers import SentenceTransformer
 from numpy.linalg import norm
@@ -24,14 +22,6 @@ STOP_WORDS = {
     'plus', 'degree', 'bachelors'
 }
 
-from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
-class SharedEmbeddingFunction(EmbeddingFunction):
-    def __init__(self, model):
-        self.model = model
-    def __call__(self, input: Documents) -> Embeddings:
-        return self.model.encode(input).tolist()
-
-
 class ScoringEngine:
     def __init__(self):
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -40,13 +30,6 @@ class ScoringEngine:
             self.nlp = spacy.load('en_core_web_sm')
         except:
             self.nlp = None
-        
-        # Initialize ChromaDB (Persistent)
-        self.chroma_client = chromadb.PersistentClient(path="./chroma_db")
-        self.collection = self.chroma_client.get_or_create_collection(
-            name="resumes",
-            embedding_function=SharedEmbeddingFunction(self.model)
-        )
 
     def extract_entities(self, text: str) -> Dict:
         """Extract Companies, Experience, and Education using spaCy"""
@@ -95,13 +78,6 @@ class ScoringEngine:
         jd_emb = self.model.encode(jd_text)
         similarity = float((resume_emb @ jd_emb.T) / (norm(resume_emb) * norm(jd_emb)))
         score = similarity * 100
-
-        # Vector Store: Add to ChromaDB
-        self.collection.add(
-            documents=[resume_text],
-            metadatas=[{"source": "uploaded_resume"}],
-            ids=[str(hash(resume_text[:100]))]
-        )
 
         # Keyword analysis
         resume_keywords = self.calculate_keyword_score(resume_text, jd_text)
