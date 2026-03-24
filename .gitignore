@@ -1,0 +1,20 @@
+# Python
+backend/venv/
+backend/.env
+backend/chroma_db/
+.venv/
+
+# Python Cache (Global)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node/React
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
