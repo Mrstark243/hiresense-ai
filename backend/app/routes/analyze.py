@@ -8,7 +8,14 @@ import os
 import tempfile
 
 router = APIRouter()
-scoring_engine = ScoringEngine()
+scoring_engine: ScoringEngine = None
+
+def get_scoring_engine():
+    global scoring_engine
+    if scoring_engine is None:
+        print("Initializing ML models for the first time...")
+        scoring_engine = ScoringEngine()
+    return scoring_engine
 
 @router.post("/analyze")
 async def analyze_resume(
@@ -30,7 +37,8 @@ async def analyze_resume(
             raise HTTPException(status_code=400, detail="Could not extract text from PDF.")
 
         # 2. Analyze using the NEW ScoringEngine logic (ChromaDB + spaCy)
-        analysis = scoring_engine.analyze(clean_text, jd)
+        engine = get_scoring_engine()
+        analysis = engine.analyze(clean_text, jd)
         return analysis
     
     finally:
@@ -40,5 +48,6 @@ async def analyze_resume(
 @router.post("/generate-ideal-resume")
 async def generate_ideal_resume_endpoint(jd: str = Form(...)):
     """Standalone endpoint for generating the ideal resume blueprint from JD only"""
-    result = scoring_engine.generate_ideal_resume(jd)
+    engine = get_scoring_engine()
+    result = engine.generate_ideal_resume(jd)
     return result
