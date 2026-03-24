@@ -89,22 +89,6 @@ class ScoringEngine:
             
         return scores
 
-    def generate_ideal_resume(self, jd_text: str) -> Dict:
-        """Synthesize a structured Ideal Resume based on JD requirements"""
-        jd_words = set(re.findall(r'\w+', jd_text.lower()))
-        tech_found = [t for t in TECH_KEYWORDS if t in jd_words]
-        
-        return {
-            "summary": f"A results-oriented professional with specialized expertise in {', '.join(tech_found[:3]) if tech_found else 'modern software engineering'}. Proven ability to lead complex projects and integrate cutting-edge AI solutions.",
-            "top_skills": tech_found[:8],
-            "experience_focus": [
-                f"Design and architecture of scalable systems using {tech_found[0] if len(tech_found) > 0 else 'core technologies'}.",
-                f"Integration of {tech_found[1] if len(tech_found) > 1 else 'AI/ML'} capabilities to enhance user experience.",
-                "Collaboration with cross-functional teams in an Agile environment."
-            ],
-            "education_target": "Bachelor's or Master's degree in Computer Science or related field."
-        }
-
     def analyze(self, resume_text: str, jd_text: str) -> Dict:
         # Embedding-based similarity
         resume_emb = self.model.encode(resume_text)
@@ -123,22 +107,24 @@ class ScoringEngine:
         resume_keywords = self.calculate_keyword_score(resume_text, jd_text)
         entities = self.extract_entities(resume_text)
         categories = self.calculate_category_scores(resume_text, jd_text)
-        ideal_resume = self.generate_ideal_resume(jd_text)
 
-        # Final score blending
-        final_score = (score * 0.7) + (len(resume_keywords['strong_matches']) * 3)
-        final_score = min(max(final_score, 0), 100)
+        # Restore perfect 60/40 scoring match calculation from original analyzer
+        total_keywords = len(resume_keywords['strong_matches']) + len(resume_keywords['missing_areas'])
+        keyword_score = (len(resume_keywords['strong_matches']) / max(total_keywords, 1)) * 100
+        
+        # Final score blending: 60% semantic similarity, 40% exact keyword match
+        final_score = (score * 0.6) + (keyword_score * 0.4)
+        final_score = round(min(max(final_score, 0), 100), 2)
 
         return {
-            "score": round(final_score, 2),
-            "explanation": f"Candidate is an {self.get_match_level(final_score)} match with a score of {round(final_score, 2)}%. "
+            "score": final_score,
+            "explanation": f"Candidate is an {self.get_match_level(final_score)} match with a score of {final_score}%. "
                            f"Our deep tech analysis identified key strengths in {', '.join(resume_keywords['strong_matches'][:3])}.",
             "strong_skills": resume_keywords['strong_matches'],
             "missing_skills": resume_keywords['missing_areas'],
             "suggestions": self.generate_suggestions(resume_keywords['missing_areas']),
             "entities": entities,
-            "categories": categories,
-            "ideal_resume": ideal_resume
+            "categories": categories
         }
 
     def calculate_keyword_score(self, resume_text: str, jd_text: str) -> Dict:

@@ -44,10 +44,3 @@ async def analyze_resume(
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-
-@router.post("/generate-ideal-resume")
-async def generate_ideal_resume_endpoint(jd: str = Form(...)):
-    """Standalone endpoint for generating the ideal resume blueprint from JD only"""
-    engine = get_scoring_engine()
-    result = engine.generate_ideal_resume(jd)
-    return result
