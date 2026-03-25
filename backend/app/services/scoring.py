@@ -187,25 +187,31 @@ class ScoringEngine:
         safe_jd = jd_text[:1200]
         
         prompt = f"""<|system|>
-You are a senior AI recruiter performing deep candidate evaluation. Return ONLY a valid JSON object matching the exact schema. Do NOT include markdown blocks. Do NOT include any extra text. No contradictions (e.g., if MySQL exists, Databases cannot be a full gap).
+You are a senior AI recruiter performing deep candidate evaluation. Return ONLY valid JSON matching the schema exactly. Do NOT include markdown blocks. Do NOT include any extra text.
+
+CRITICAL SYSTEM LOGIC:
+1. SKILL NORMALIZATION: Prioritize semantic meaning over exact match (e.g. FastAPI -> API Development).
+2. STRICT CONTRADICTION RULE: A skill MUST NOT appear in both strong matches and gaps. If related skill exists, classify as Partial Match, NOT Explicit Gap.
+3. SEMANTIC REASONING: Evaluate depth, production readiness.
 </s>
 <|user|>
-Evaluate this candidate deeply.
+Analyze this candidate.
 Resume: {safe_resume}
 Job Description: {safe_jd}
-Base Score: {current['score']}%
+Pre-processed Base Score: {current['score']}%
 
-Format required:
+Format required (STRICT JSON ONLY):
 {{
-  "refined_match_summary": "Explain the match score based on skill depth, production readiness, and missing ecosystem exposure",
+  "refined_match_summary": "Explain the match score based on skill depth, production readiness",
+  "match_score": {current['score']},
   "confidence_score": "High | Medium | Low",
   "hire_signal": "Strong Hire | Potential Hire | Needs Improvement | Not Ready",
-  "strong_matches": [{{"skill": "Name", "level": "Beginner | Intermediate | Advanced", "reason": "What it indicates and why it's relevant", "evidence": "evidence from resume"}}],
-  "critical_gaps": [{{"skill": "Name", "classification": "Explicit Gap | Partial Match | Weak Match", "explanation": "Explanation + why"}}],
-  "substitutable_skills": [{{"required": "req", "candidate": "alt", "transferability": "High | Medium | Low", "learning_curve": "explanation"}}],
-  "inferred_skills": [{{"skill": "Name", "derived_from": "combinations of skills", "reason": "Derived hidden capability"}}],
-  "recruiter_insights": ["1-2 high-level observations focusing on real-world readiness"],
-  "action_plan": [{{"type": "Project | Resume | Skill", "title": "Specific title", "description": "Detailed non-generic improvement", "impact": "Why it helps"}}]
+  "strong_matches": [{{"skill": "...", "level": "Beginner | Intermediate | Advanced", "reason": "...", "evidence": "Specific evidence from resume"}}],
+  "critical_gaps": [{{"skill": "...", "classification": "Explicit Gap | Partial Match | Weak Match", "explanation": "...", "evidence": "..."}}],
+  "substitutable_skills": [{{"required": "...", "candidate": "...", "transferability": "High | Medium | Low", "learning_curve": "..."}}],
+  "inferred_skills": [{{"skill": "...", "derived_from": "...", "reason": "..."}}],
+  "recruiter_insights": ["..."],
+  "action_plan": [{{"type": "Project | Resume | Skill", "title": "...", "description": "...", "impact": "..."}}]
 }}
 </s>
 <|assistant|>
@@ -235,10 +241,11 @@ Format required:
         # Fallback
         return {
             "refined_match_summary": current["explanation"],
+            "match_score": current['score'],
             "confidence_score": "Medium",
             "hire_signal": "Needs Improvement" if current['score'] < 50 else "Potential Hire",
             "strong_matches": [{"skill": s, "level": "Intermediate", "reason": "Extracted via keyword matching", "evidence": "Found in resume text"} for s in current["strong_skills"]],
-            "critical_gaps": [{"skill": s, "classification": "Explicit Gap", "explanation": "Missing core requirement"} for s in current["missing_skills"]],
+            "critical_gaps": [{"skill": s, "classification": "Explicit Gap", "explanation": "Missing core requirement", "evidence": "Not found in text"} for s in current["missing_skills"]],
             "substitutable_skills": [],
             "inferred_skills": [],
             "recruiter_insights": [],

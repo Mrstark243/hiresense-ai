@@ -34,7 +34,6 @@ const SkillGap = ({ strongSkills, missingSkills, suggestions, llmInsights }) => 
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="text-green-400 font-black text-xl">{item.skill}</div>
-                  <div className="text-[10px] font-black uppercase px-2 py-1 bg-green-500/20 text-green-300 rounded-lg tracking-widest">{item.level || 'Intermediate'}</div>
                 </div>
                 <div className="text-green-100/80 text-sm leading-relaxed mb-3">{item.reason}</div>
                 {item.evidence && (
@@ -86,7 +85,6 @@ const SkillGap = ({ strongSkills, missingSkills, suggestions, llmInsights }) => 
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div className="font-black text-xl truncate">{item.skill}</div>
-                    <div className="text-[9px] font-black uppercase px-2 py-1 bg-black/20 rounded-lg tracking-widest whitespace-nowrap">{type}</div>
                   </div>
                   <div className={`${textPrm} text-sm leading-relaxed`}>{item.explanation}</div>
                 </motion.div>
