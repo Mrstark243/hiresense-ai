@@ -187,23 +187,25 @@ class ScoringEngine:
         safe_jd = jd_text[:1200]
         
         prompt = f"""<|system|>
-You are an expert AI recruiter. Return ONLY a valid JSON object. Do NOT include markdown blocks. Do NOT include any extra text.
+You are a senior AI recruiter performing deep candidate evaluation. Return ONLY a valid JSON object matching the exact schema. Do NOT include markdown blocks. Do NOT include any extra text. No contradictions (e.g., if MySQL exists, Databases cannot be a full gap).
 </s>
 <|user|>
-Analyze this and return the exact JSON format requested.
+Evaluate this candidate deeply.
 Resume: {safe_resume}
 Job Description: {safe_jd}
 Base Score: {current['score']}%
 
 Format required:
 {{
-  "refined_match_summary": "Briefly explain the score",
-  "strong_matches": [{{"skill": "Name", "reason": "Short reason"}}],
-  "critical_gaps": [{{"skill": "Name", "explanation": "Short explanation"}}],
-  "inferred_skills": ["Skill 1", "Skill 2"],
-  "recruiter_insights": ["Insight 1", "Insight 2"],
-  "action_plan": ["Action 1", "Action 2"],
-  "substitutable_skills": [{{"required": "req", "alternative": "alt", "explanation": "why"}}]
+  "refined_match_summary": "Explain the match score based on skill depth, production readiness, and missing ecosystem exposure",
+  "confidence_score": "High | Medium | Low",
+  "hire_signal": "Strong Hire | Potential Hire | Needs Improvement | Not Ready",
+  "strong_matches": [{{"skill": "Name", "level": "Beginner | Intermediate | Advanced", "reason": "What it indicates and why it's relevant", "evidence": "evidence from resume"}}],
+  "critical_gaps": [{{"skill": "Name", "classification": "Explicit Gap | Partial Match | Weak Match", "explanation": "Explanation + why"}}],
+  "substitutable_skills": [{{"required": "req", "candidate": "alt", "transferability": "High | Medium | Low", "learning_curve": "explanation"}}],
+  "inferred_skills": [{{"skill": "Name", "derived_from": "combinations of skills", "reason": "Derived hidden capability"}}],
+  "recruiter_insights": ["1-2 high-level observations focusing on real-world readiness"],
+  "action_plan": [{{"type": "Project | Resume | Skill", "title": "Specific title", "description": "Detailed non-generic improvement", "impact": "Why it helps"}}]
 }}
 </s>
 <|assistant|>
@@ -233,12 +235,14 @@ Format required:
         # Fallback
         return {
             "refined_match_summary": current["explanation"],
-            "strong_matches": [{"skill": s, "reason": "Matching keyword"} for s in current["strong_skills"]],
-            "critical_gaps": [{"skill": s, "explanation": "Missing core requirement"} for s in current["missing_skills"]],
+            "confidence_score": "Medium",
+            "hire_signal": "Needs Improvement" if current['score'] < 50 else "Potential Hire",
+            "strong_matches": [{"skill": s, "level": "Intermediate", "reason": "Extracted via keyword matching", "evidence": "Found in resume text"} for s in current["strong_skills"]],
+            "critical_gaps": [{"skill": s, "classification": "Explicit Gap", "explanation": "Missing core requirement"} for s in current["missing_skills"]],
+            "substitutable_skills": [],
             "inferred_skills": [],
             "recruiter_insights": [],
-            "action_plan": current["suggestions"],
-            "substitutable_skills": []
+            "action_plan": [{"type": "Skill", "title": "Address Gaps", "description": s, "impact": "Improves keyword alignment"} for s in current["suggestions"]]
         }
 
     def get_match_level(self, score: float) -> str:

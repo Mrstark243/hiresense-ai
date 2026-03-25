@@ -68,7 +68,7 @@ const Dashboard = () => {
             className="space-y-12"
           >
             <div className="grid gap-8">
-               <ResultCard score={result.score} explanation={result.llm_insights?.refined_match_summary || result.explanation} />
+               <ResultCard score={result.score} explanation={result.llm_insights?.refined_match_summary || result.explanation} llmInsights={result.llm_insights} />
             </div>
 
             <AIPerfectMatch idealResume={result.ideal_resume} />

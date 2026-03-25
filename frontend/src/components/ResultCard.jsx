@@ -2,7 +2,7 @@ import React from 'react';
 import { Award, Target, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const ResultCard = ({ score, explanation }) => {
+const ResultCard = ({ score, explanation, llmInsights }) => {
   const getScoreTheme = (s) => {
     if (s >= 80) return {
        color: 'text-green-400',
@@ -77,9 +77,19 @@ const ResultCard = ({ score, explanation }) => {
             <p className="text-slate-300 leading-relaxed text-lg relative z-10 font-medium">
               {explanation}
             </p>
-            <div className="mt-8 flex items-center justify-center lg:justify-start gap-6 text-xs font-black uppercase tracking-widest text-slate-500">
-               <div className="flex items-center gap-2"><Target size={14} className="text-primary-400" /> Precision Engine v4.0</div>
-               <div className="flex items-center gap-2"><Sparkles size={14} className="text-primary-400" /> RAG Powered</div>
+            <div className="mt-8 flex flex-wrap items-center justify-center lg:justify-start gap-4 text-xs font-black uppercase tracking-widest text-slate-500">
+               <div className="flex items-center gap-2 bg-slate-900/50 px-3 py-1.5 rounded-lg"><Target size={14} className="text-primary-400" /> Precision Engine v4.0</div>
+               <div className="flex items-center gap-2 bg-slate-900/50 px-3 py-1.5 rounded-lg"><Sparkles size={14} className="text-primary-400" /> RAG Powered</div>
+               {llmInsights?.hire_signal && (
+                 <div className="flex items-center gap-2 bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg text-white shadow-lg shadow-white/5">
+                   Signal: <span className="text-primary-400">{llmInsights.hire_signal}</span>
+                 </div>
+               )}
+               {llmInsights?.confidence_score && (
+                 <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1.5 rounded-lg text-white">
+                   Confidence: <span className="text-indigo-400">{llmInsights.confidence_score}</span>
+                 </div>
+               )}
             </div>
           </div>
         </div>
