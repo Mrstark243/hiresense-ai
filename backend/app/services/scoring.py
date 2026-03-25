@@ -109,16 +109,9 @@ class ScoringEngine:
             if any(re.search(rf'\b{re.escape(kw)}\b', jd_lower) for kw in keywords):
                 matched_kws = [kw for kw in keywords if re.search(rf'\b{re.escape(kw)}\b', resume_lower)]
                 required_kws = [kw for kw in keywords if re.search(rf'\b{re.escape(kw)}\b', jd_lower)]
-                missing_kws = [kw for kw in required_kws if kw not in matched_kws]
                 
                 if matched_kws:
                     evidence_map[group_name] = matched_kws
-                    
-                    if missing_kws:
-                        for kw in missing_kws:
-                            if group_name == "devops" and kw in ["ci", "cd", "pipelines", "ci/cd"]:
-                                continue
-                            missing_groups.add(kw)
                     
                     # CLOUD
                     if group_name == "cloud":
