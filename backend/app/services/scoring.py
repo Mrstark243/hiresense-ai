@@ -77,10 +77,6 @@ class ScoringEngine:
             "education": education
         }
 
-    def is_deep_skill(self, resume_text: str, keywords: List[str]) -> bool:
-        context_keywords = ["developed", "built", "implemented", "deployed", "designed", "project", "experience"]
-        return any(kw in resume_text for kw in keywords) and any(ctx in resume_text for ctx in context_keywords)
-
     def calculate_category_scores(self, resume_text: str, jd_text: str) -> List[Dict]:
         """Calculate match scores per semantic group for visualization"""
         scores = []
@@ -114,39 +110,56 @@ class ScoringEngine:
                 matched_kws = [kw for kw in keywords if kw in resume_lower]
                 
                 if matched_kws:
-                    # Specific algorithmic partial match overrides
+                    evidence_map[group_name] = matched_kws
+                    
+                    # CLOUD
                     if group_name == "cloud":
-                        if not any(ctx in resume_lower for ctx in ["deploy", "ec2", "hosting", "production"]):
-                            partial_groups.add(group_name)
-                            evidence_map[group_name] = matched_kws
+                        if any(k in resume_lower for k in ["aws", "gcp", "azure"]):
+                            if any(k in resume_lower for k in ["deploy", "deployment", "ec2", "hosting", "production"]):
+                                strong_groups.add(group_name)
+                            else:
+                                partial_groups.add(group_name)
                         else:
+                            partial_groups.add(group_name)
+                            
+                    # AI/ML
+                    elif group_name == "ai_and_ml":
+                        if "llm" in resume_lower and any(k in resume_lower for k in ["fine-tuning", "training", "deployment"]):
                             strong_groups.add(group_name)
-                            evidence_map[group_name] = matched_kws
-                    elif group_name == "ai_and_ml" and "rag" in matched_kws and "llm" not in matched_kws:
-                        partial_groups.add(group_name)
-                        evidence_map[group_name] = matched_kws
-                    elif group_name == "databases" and len(matched_kws) == 1:
-                        partial_groups.add(group_name)
-                        evidence_map[group_name] = matched_kws
-                    elif not self.is_deep_skill(resume_lower, matched_kws):
-                        partial_groups.add(group_name)
-                        evidence_map[group_name] = matched_kws
+                        else:
+                            partial_groups.add(group_name)
+                            
+                    # DATABASES
+                    elif group_name == "databases":
+                        if len(matched_kws) >= 2:
+                            strong_groups.add(group_name)
+                        else:
+                            partial_groups.add(group_name)
+                            
+                    # DEVOPS
+                    elif group_name == "devops":
+                        if "docker" in resume_lower and "kubernetes" in resume_lower:
+                            strong_groups.add(group_name)
+                        else:
+                            partial_groups.add(group_name)
+                            
+                    # BACKEND
+                    elif group_name == "backend":
+                        backend_frameworks = ["fastapi", "django", "flask", "node", "express", "spring"]
+                        if any(f in resume_lower for f in backend_frameworks) and "api" in resume_lower:
+                            strong_groups.add(group_name)
+                        else:
+                            partial_groups.add(group_name)
+                            
+                    # DEFAULT RULE
                     else:
-                        strong_groups.add(group_name)
-                        evidence_map[group_name] = matched_kws
+                        partial_groups.add(group_name)
                 else:
-                    # Check for related foundational skills indicating a Partial Match
-                    partial_kws = []
-                    if group_name == "cloud":
-                        partial_kws = [k for k in ["docker", "kubernetes", "linux"] if k in resume_lower]
-                    elif group_name == "api_development":
-                        partial_kws = [k for k in ["fastapi", "django", "flask", "node"] if k in resume_lower]
-                        
-                    if partial_kws:
-                        partial_groups.add(group_name)
-                        evidence_map[group_name] = partial_kws
-                    else:
-                        missing_groups.add(group_name)
+                    missing_groups.add(group_name)
+                    
+        print("STRONG:", strong_groups)
+        print("PARTIAL:", partial_groups)
+        print("MISSING:", missing_groups)
 
         return {
             "strong_matches": list(strong_groups),
@@ -189,9 +202,12 @@ class ScoringEngine:
             
         final_score = round(min(max(final_score, 0), 100), 2)
         
-        # PREVENT 100% SCORE IF PARTIAL MATCHES EXIST
+        # HARD SCORE LIMITS
         if resume_keywords['partial_matches']:
             final_score = min(final_score, 90)
+            
+        if resume_keywords['missing_areas']:
+            final_score = min(final_score, 85)
 
         # Generate dynamic, recruiter-style multi-sentence analysis
         ex_level = self.get_match_level(final_score).upper()
@@ -225,7 +241,7 @@ class ScoringEngine:
             "partial_skills": resume_keywords['partial_matches'],
             "missing_skills": resume_keywords['missing_areas'],
             "evidence_map": resume_keywords.get('evidence_map', {}),
-            "suggestions": self.generate_suggestions(resume_keywords['strong_matches'], resume_keywords['missing_areas'])
+            "suggestions": self.generate_suggestions(resume_keywords['strong_matches'], resume_keywords['missing_areas'], resume_keywords['partial_matches'])
         }
 
         llm_insights = self.generate_llm_insights(resume_text, jd_text, current_analysis)
@@ -365,15 +381,17 @@ Format required (STRICT JSON ONLY):
         if score >= 40: return "Moderate"
         return "Developing"
 
-    def generate_suggestions(self, strong_skills: List[str], missing_skills: List[str]) -> List[str]:
+    def generate_suggestions(self, strong_skills: List[str], missing_skills: List[str], partial_skills: List[str]) -> List[str]:
         suggestions = []
         
         # 1. Address Missing Gaps to standout
         if missing_skills:
             top_missing = [s.replace('_', ' ').title() for s in missing_skills[:3]]
             suggestions.append(f"CRITICAL GAP: The JD heavily emphasizes {', '.join(top_missing)}. If you have even partial experience with these domains, add a dedicated bullet point detailing a project where you utilized them.")
+        elif partial_skills:
+            suggestions.append("YOUR ADVANTAGE: You have strong alignment with the core requirements. Focus on building and deploying a deeper project targeting your partial match areas.")
         else:
-            suggestions.append("YOUR ADVANTAGE: Your skill stack perfectly aligns with the JD's semantic requirements! Focus entirely on quantifying your impact.")
+            suggestions.append("YOUR ADVANTAGE: Your skill stack completely aligns with the JD's semantic requirements! Focus entirely on quantifying your impact.")
 
         # 2. Leverage Existing Strengths
         if strong_skills:
