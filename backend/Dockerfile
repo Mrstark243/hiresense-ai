@@ -15,8 +15,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the backend files
 COPY . .
 
-# Expose the port that Render uses
-EXPOSE 10000
+# Set the PORT environment variable to 10000 by default
+ENV PORT=10000
+
+# Expose the port
+EXPOSE $PORT
 
 # Start the application using Uvicorn
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port $PORT"]
