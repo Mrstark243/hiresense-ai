@@ -159,7 +159,9 @@ class ScoringEngine:
         categories = self.calculate_category_scores(resume_text, jd_text)
 
         total_keywords = len(resume_keywords['strong_matches']) + len(resume_keywords['missing_areas']) + len(resume_keywords['partial_matches'])
-        keyword_score = (len(resume_keywords['strong_matches']) / max(total_keywords, 1)) * 100
+        # Partial matches get 0.5 weight instead of full reduction
+        weighted_score = len(resume_keywords['strong_matches']) + (0.5 * len(resume_keywords['partial_matches']))
+        keyword_score = (weighted_score / max(total_keywords, 1)) * 100
         
         # Final score blending: 60% semantic similarity, 40% exact keyword match
         final_score = (score * 0.6) + (keyword_score * 0.4)
@@ -167,12 +169,9 @@ class ScoringEngine:
         if score == 0:
             final_score = keyword_score
             
-        # Apply Partial Match Penalties
-        num_partials = len(resume_keywords['partial_matches'])
-        if num_partials >= 3:
-            final_score -= 15
-        elif num_partials >= 1:
-            final_score -= 7
+        # Apply logic floors: No explicit gaps but possess partials -> highly viable
+        if not resume_keywords['missing_areas'] and resume_keywords['partial_matches']:
+            final_score = max(final_score, 70)
             
         final_score = round(min(max(final_score, 0), 100), 2)
 
@@ -191,8 +190,13 @@ class ScoringEngine:
                 base_exp += f" While the profile is strong overall, the absence of explicit experience with {gaps_str} might place them at a slight disadvantage compared to perfectly aligned peers."
             else:
                 base_exp += f" A significant hurdle is the lack of visible experience with critical requirements like {gaps_str}. The candidate must bridge this gap to be considered competitive."
+        elif resume_keywords['partial_matches']:
+            base_exp += " The candidate shows strong alignment with core requirements, with some areas requiring deeper ecosystem exposure."
         else:
             base_exp += " The candidate seamlessly aligns with virtually every technical requirement listed in the job description, making them an exceptionally competitive applicant."
+
+        if resume_keywords['partial_matches']:
+            base_exp += " The score reflects partial exposure in certain domains rather than a complete lack of skills."
 
         base_exp += " To maximize their chances of securing an interview, the candidate should heed the targeted suggestions below to optimize their portfolio and resume narrative."
 
