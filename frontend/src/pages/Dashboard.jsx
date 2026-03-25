@@ -12,6 +12,7 @@ const Dashboard = () => {
   const [data, setData] = useState(location.state || null);
 
   useEffect(() => {
+    window.scrollTo(0, 0);
     if (!data) {
       const saved = localStorage.getItem('lastAnalysis');
       if (saved) setData(JSON.parse(saved));
@@ -48,7 +49,7 @@ const Dashboard = () => {
           </button>
           <h1 className="text-4xl md:text-5xl font-black flex items-center gap-4">
              <div className="p-3 bg-primary-600 rounded-2xl"><LayoutDashboard className="text-white w-8 h-8" /></div>
-             Result <span className="gradient-text">Insights</span>
+             Result <span className="text-primary-400">Insights</span>
           </h1>
         </div>
         <div className="bg-white/5 px-6 py-3 rounded-2xl border border-white/10">
