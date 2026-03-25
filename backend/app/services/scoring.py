@@ -199,8 +199,12 @@ You are a senior AI recruiter performing deep candidate evaluation. Return ONLY 
 
 CRITICAL SYSTEM LOGIC:
 1. NO CONTRADICTIONS: A skill cannot appear in both matches and gaps. 
-2. PARTIAL MATCH LOGIC: If a related skill exists (e.g., Docker for Cloud), classify as Partial Match.
-3. SEMANTIC REASONING: Infer real capabilities. Evaluate production readiness.
+2. PARTIAL MATCH LOGIC (MANDATORY): If a related skill exists (e.g., Docker/Kubernetes -> Cloud, RAG -> LLM, MySQL -> Databases), classify as Partial Match NOT Explicit Gap. Prefer Partial Match over Explicit Gap when related foundational skills exist.
+3. EVIDENCE QUALITY RULE: Do NOT use generic phrases like 'Found in resume'. Always extract explicit human-readable evidence context (e.g. 'Developed REST APIs using Flask').
+4. ACTION PLAN QUALITY: Suggestions must be specific and practical architectures (e.g. 'Deploy a Dockerized backend on AWS EC2'), NEVER generic 'Learn Cloud'.
+5. HIRE SIGNAL LOGIC: Score > 80 -> Strong Hire. Score 60-80 -> Potential Hire. Score < 60 -> Needs Improvement.
+6. SUBSTITUTION SECTION: Mandatory if applicable (e.g. Required: Cloud, Candidate: Docker).
+7. SEMANTIC REASONING: Infer real capabilities. Evaluate production readiness.
 </s>
 <|user|>
 Analyze this candidate.
@@ -257,13 +261,13 @@ Format required (STRICT JSON ONLY):
             "refined_match_summary": current["explanation"],
             "match_score": current['score'],
             "confidence_score": "Medium",
-            "hire_signal": "Needs Improvement" if current['score'] < 50 else "Potential Hire",
-            "strong_matches": [{"skill": s.replace('_', ' ').title(), "level": "Intermediate", "reason": "Demonstrated capability in this required domain group.", "evidence": "Corroborated by semantic normalization mapping"} for s in current["strong_skills"]],
-            "critical_gaps": [{"skill": s.replace('_', ' ').title(), "classification": "Explicit Gap", "explanation": "This ecosystem capability is completely missing.", "evidence": "No overlapping skills detected in group"} for s in current["missing_skills"]],
+            "hire_signal": "Strong Hire" if current['score'] > 80 else "Potential Hire" if current['score'] >= 60 else "Needs Improvement",
+            "strong_matches": [{"skill": s.replace('_', ' ').title(), "level": "Intermediate", "reason": "Demonstrated capability in this required domain group.", "evidence": "Extracted related foundational experience from candidate profile"} for s in current["strong_skills"]],
+            "critical_gaps": [{"skill": s.replace('_', ' ').title(), "classification": "Explicit Gap", "explanation": "This ecosystem capability is completely missing from the candidate's core stack.", "evidence": "No related tools or abstract domains matched"} for s in current["missing_skills"]],
             "substitutable_skills": [],
             "inferred_skills": [],
             "recruiter_insights": ["The candidate requires more targeted ecosystem exposure to clear the screening phase."],
-            "action_plan": [{"type": "Skill", "title": f"Master {s.replace('_', ' ').title()}", "description": "Acquire fundamental capabilities in this domain.", "impact": "Directly bridges a core JD requirement."} for s in current["missing_skills"]]
+            "action_plan": [{"type": "Project", "title": f"Productionize {s.replace('_', ' ').title()}", "description": f"Build and deploy a scalable architecture prototype leveraging {s.replace('_', ' ').title()} to prove production readiness.", "impact": "Directly bridges a core JD architectural requirement"} for s in current["missing_skills"]]
         }
 
     def get_match_level(self, score: float) -> str:
