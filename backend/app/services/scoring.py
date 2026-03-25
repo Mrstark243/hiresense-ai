@@ -126,22 +126,37 @@ class ScoringEngine:
                             
                     # AI/ML
                     elif group_name == "ai_and_ml":
-                        if "llm" in resume_lower and any(k in resume_lower for k in ["fine-tuning", "training", "deployment"]):
+                        if any(re.search(rf'\b{re.escape(k)}\b', resume_lower) for k in ["rag", "chatbot", "model"]):
+                            strong_groups.add(group_name)
+                        else:
+                            partial_groups.add(group_name)
+                            
+                    # FRONTEND
+                    elif group_name == "frontend":
+                        if all(re.search(rf'\b{re.escape(k)}\b', resume_lower) for k in ["react", "html", "css"]):
+                            strong_groups.add(group_name)
+                        else:
+                            partial_groups.add(group_name)
+                            
+                    # API DEVELOPMENT
+                    elif group_name == "api_development":
+                        backend_frameworks = ["fastapi", "django", "flask", "node", "express", "spring"]
+                        if any(re.search(rf'\b{re.escape(k)}\b', resume_lower) for k in ["api", "rest"]) and any(re.search(rf'\b{re.escape(f)}\b', resume_lower) for f in backend_frameworks):
                             strong_groups.add(group_name)
                         else:
                             partial_groups.add(group_name)
                             
                     # DATABASES
                     elif group_name == "databases":
-                        if len(matched_kws) >= 2:
-                            strong_groups.add(group_name)
-                        else:
-                            partial_groups.add(group_name)
+                        strong_groups.add(group_name)
                             
                     # DEVOPS
                     elif group_name == "devops":
                         if re.search(r'\bdocker\b', resume_lower) and re.search(r'\bkubernetes\b', resume_lower):
-                            strong_groups.add(group_name)
+                            if any(re.search(rf'\b{re.escape(k)}\b', resume_lower) for k in ["deploy", "deployment", "hosting", "production"]):
+                                strong_groups.add(group_name)
+                            else:
+                                partial_groups.add(group_name)
                         else:
                             partial_groups.add(group_name)
                             
@@ -159,7 +174,11 @@ class ScoringEngine:
                             
                     # DEFAULT RULE
                     else:
-                        partial_groups.add(group_name)
+                        context_keywords = ["developed", "built", "implemented", "deployed", "designed", "project", "experience"]
+                        if any(re.search(rf'\b{re.escape(ctx)}\b', resume_lower) for ctx in context_keywords):
+                            strong_groups.add(group_name)
+                        else:
+                            partial_groups.add(group_name)
                 else:
                     # Semantic Proxy: Docker/K8s gives partial Cloud credit
                     if group_name == "cloud":
