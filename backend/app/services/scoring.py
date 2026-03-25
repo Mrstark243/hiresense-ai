@@ -136,32 +136,65 @@ class ScoringEngine:
             
         final_score = round(min(max(final_score, 0), 100), 2)
 
+        # Generate dynamic, recruiter-style multi-sentence analysis
+        ex_level = self.get_match_level(final_score).upper()
+        
+        if resume_keywords['strong_matches']:
+            strengths_str = ", ".join([sk.title() for sk in resume_keywords['strong_matches'][:4]])
+            base_exp = f"This resume represents a {ex_level} match for the role ({final_score}% relevance). The candidate showcases a robust technical foundation, particularly excelling in {strengths_str}."
+        else:
+            base_exp = f"This resume indicates a {ex_level} match ({final_score}% relevance). However, it struggles to demonstrate the core technical competencies required for this specific role."
+
+        if resume_keywords['missing_areas']:
+            gaps_str = ", ".join([sk.title() for sk in resume_keywords['missing_areas'][:3]])
+            if final_score > 60:
+                base_exp += f" While the profile is strong overall, the absence of explicit experience with {gaps_str} might place them at a slight disadvantage compared to perfectly aligned peers."
+            else:
+                base_exp += f" A significant hurdle is the lack of visible experience with critical requirements like {gaps_str}. The candidate must bridge this gap to be considered competitive."
+        else:
+            base_exp += " The candidate seamlessly aligns with virtually every technical requirement listed in the job description, making them an exceptionally competitive applicant."
+
+        base_exp += " To maximize their chances of securing an interview, the candidate should heed the targeted suggestions below to optimize their portfolio and resume narrative."
+
         return {
             "score": final_score,
-            "explanation": f"Candidate is an {self.get_match_level(final_score)} match with a score of {final_score}%. "
-                           f"Key strengths identified in {', '.join(resume_keywords['strong_matches'][:3]) if resume_keywords['strong_matches'] else 'general areas'}.",
+            "explanation": base_exp,
             "strong_skills": resume_keywords['strong_matches'],
             "missing_skills": resume_keywords['missing_areas'],
-            "suggestions": self.generate_suggestions(resume_keywords['missing_areas']),
+            "suggestions": self.generate_suggestions(resume_keywords['strong_matches'], resume_keywords['missing_areas']),
             "entities": entities,
             "categories": categories
         }
 
     def get_match_level(self, score: float) -> str:
-        if score >= 80: return "exceptional"
-        if score >= 60: return "strong"
-        if score >= 40: return "moderate"
-        return "developing"
+        if score >= 80: return "Exceptional"
+        if score >= 60: return "Strong"
+        if score >= 40: return "Moderate"
+        return "Developing"
 
-    def generate_suggestions(self, missing_skills: List[str]) -> List[str]:
-        if not missing_skills:
-            return ["Resume is highly optimized. Consider adding specific project metrics."]
-        
-        tech_missing = [s for s in missing_skills if s in TECH_KEYWORDS]
+    def generate_suggestions(self, strong_skills: List[str], missing_skills: List[str]) -> List[str]:
         suggestions = []
+        tech_missing = [s for s in missing_skills if s in TECH_KEYWORDS]
+        
+        # 1. Address Missing Gaps to standout
         if tech_missing:
-            suggestions.append(f"Consider adding more details about your experience with: {', '.join(tech_missing[:5])}.")
-        suggestions.append("Quantify your achievements with metrics to show impact (e.g., 'Improved performance by 20%').")
-        suggestions.append("Ensure your summary highlights your most relevant projects for this specific job description.")
+            top_missing = tech_missing[:3]
+            suggestions.append(f"CRITICAL GAP: The JD heavily emphasizes {', '.join([m.title() for m in top_missing])}. If you have even partial experience with these, add a dedicated bullet point detailing a project where you utilized them.")
+        else:
+            suggestions.append("YOUR ADVANTAGE: Your skill stack perfectly aligns with the JD! Focus entirely on quantifying your impact rather than adding new buzzwords.")
+
+        # 2. Leverage Existing Strengths
+        if strong_skills:
+            top_strength = strong_skills[0].title()
+            suggestions.append(f"SHOWCASE EXPERTISE: You matched on '{top_strength}'. Don't just list it—prove it. Add metrics (e.g., 'Scaled a {top_strength} application to handle 10k+ daily active users' or 'Reduced latency by 30% using {top_strength}').")
+        
+        # 3. Actionable Portfolio tip
+        if "github" in missing_skills or "git" in missing_skills:
+            suggestions.append("PORTFOLIO TIP: The recruiter is looking for version control / GitHub experience. Link a live codebase or open-source contribution at the very top of your resume.")
+        elif tech_missing:
+            suggestions.append(f"STAND OUT: To beat out senior candidates, build and deploy a rapid weekend prototype combining your existing skills with {tech_missing[0].title()}, and hyperlink it in your resume header.")
+        else:
+            suggestions.append("STAND OUT: You are a top-tier match. Ensure your LinkedIn profile is equally optimized and reach out directly to the hiring manager with a brief summary of how your stack perfectly mirrors their requirements.")
+
         return suggestions
 
