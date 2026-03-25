@@ -156,14 +156,85 @@ class ScoringEngine:
 
         base_exp += " To maximize their chances of securing an interview, the candidate should heed the targeted suggestions below to optimize their portfolio and resume narrative."
 
-        return {
+        current_analysis = {
             "score": final_score,
             "explanation": base_exp,
             "strong_skills": resume_keywords['strong_matches'],
             "missing_skills": resume_keywords['missing_areas'],
-            "suggestions": self.generate_suggestions(resume_keywords['strong_matches'], resume_keywords['missing_areas']),
+            "suggestions": self.generate_suggestions(resume_keywords['strong_matches'], resume_keywords['missing_areas'])
+        }
+
+        llm_insights = self.generate_llm_insights(resume_text, jd_text, current_analysis)
+
+        return {
+            "score": final_score,
+            "llm_insights": llm_insights,
             "entities": entities,
-            "categories": categories
+            "categories": categories,
+            # Keep legacy
+            "explanation": base_exp,
+            "strong_skills": resume_keywords['strong_matches'],
+            "missing_skills": resume_keywords['missing_areas'],
+            "suggestions": current_analysis["suggestions"]
+        }
+
+    def generate_llm_insights(self, resume_text: str, jd_text: str, current: Dict) -> Dict:
+        api_url = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"
+        prompt = f"""You are an expert AI recruiter refining an existing resume analysis.
+        
+        INPUT:
+        Resume Text: {resume_text[:3000]}
+        Job Description: {jd_text[:3000]}
+        Current Analysis Score: {current['score']}%
+        
+        INSTRUCTIONS:
+        CONVERT KEYWORD MATCHING TO CONTEXTUAL REASONING.
+        Infer hidden skills from resume. Add recruiter-level insights.
+        Transform suggestions into actionable strategy with specifics.
+        Identify substitutable skills (e.g. Docker <-> Podman).
+        
+        OUTPUT FORMAT (Strict JSON, no markdown):
+        {{
+            "refined_match_summary": "Explain WHY this score makes sense based on the JD and Resume",
+            "strong_matches": [{{"skill": "Skill Name", "reason": "Reason + Evidence"}}],
+            "critical_gaps": [{{"skill": "Skill Name", "explanation": "Explanation + whether implicit match exists"}}],
+            "inferred_skills": ["List hidden strengths derived from experience"],
+            "recruiter_insights": ["1-2 high-level observations"],
+            "action_plan": ["3-5 sharp, non-generic real project ideas/improvements"],
+            "substitutable_skills": [{{"required": "Skill", "alternative": "Skill", "explanation": "Why it's transferable"}}]
+        }}
+        """
+        import json
+        try:
+            print("DEBUG: Calling HF Instruct model for RAG insights...")
+            response = requests.post(
+                api_url, 
+                headers=self.headers, 
+                json={"inputs": prompt, "parameters": {"max_new_tokens": 1200, "return_full_text": False, "temperature": 0.2}}, 
+                timeout=40
+            )
+            if response.status_code == 200:
+                result = response.json()
+                generated_text = result[0]['generated_text'].strip()
+                if generated_text.startswith("```json"): generated_text = generated_text[7:]
+                if generated_text.startswith("```"): generated_text = generated_text[3:]
+                if generated_text.endswith("```"): generated_text = generated_text[:-3]
+                
+                return json.loads(generated_text)
+            else:
+                print(f"HF Gen API Error: {response.text}")
+        except Exception as e:
+            print(f"HF Gen API Exception: {e}")
+            
+        # Fallback
+        return {
+            "refined_match_summary": current["explanation"],
+            "strong_matches": [{"skill": s, "reason": "Matching keyword"} for s in current["strong_skills"]],
+            "critical_gaps": [{"skill": s, "explanation": "Missing core requirement"} for s in current["missing_skills"]],
+            "inferred_skills": ["Unable to infer skills, API fallback."],
+            "recruiter_insights": ["Solid baseline matching completed. Review manual checks for nuanced overlaps."],
+            "action_plan": current["suggestions"],
+            "substitutable_skills": []
         }
 
     def get_match_level(self, score: float) -> str:

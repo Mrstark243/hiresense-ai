@@ -67,7 +67,7 @@ const Dashboard = () => {
             className="space-y-12"
           >
             <div className="grid gap-8">
-               <ResultCard score={result.score} explanation={result.explanation} />
+               <ResultCard score={result.score} explanation={result.llm_insights?.refined_match_summary || result.explanation} />
             </div>
 
             <AIPerfectMatch idealResume={result.ideal_resume} />
@@ -76,6 +76,7 @@ const Dashboard = () => {
               strongSkills={result.strong_skills} 
               missingSkills={result.missing_skills} 
               suggestions={result.suggestions} 
+              llmInsights={result.llm_insights}
             />
           </motion.div>
         ) : (
