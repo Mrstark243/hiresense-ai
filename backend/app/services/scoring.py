@@ -77,6 +77,10 @@ class ScoringEngine:
             "education": education
         }
 
+    def is_deep_skill(self, resume_text: str, keywords: List[str]) -> bool:
+        context_keywords = ["developed", "built", "implemented", "deployed", "designed", "project", "experience"]
+        return any(kw in resume_text for kw in keywords) and any(ctx in resume_text for ctx in context_keywords)
+
     def calculate_category_scores(self, resume_text: str, jd_text: str) -> List[Dict]:
         """Calculate match scores per semantic group for visualization"""
         scores = []
@@ -111,10 +115,20 @@ class ScoringEngine:
                 
                 if matched_kws:
                     # Specific algorithmic partial match overrides
-                    if group_name == "ai_and_ml" and "rag" in matched_kws and "llm" not in matched_kws:
+                    if group_name == "cloud":
+                        if not any(ctx in resume_lower for ctx in ["deploy", "ec2", "hosting", "production"]):
+                            partial_groups.add(group_name)
+                            evidence_map[group_name] = matched_kws
+                        else:
+                            strong_groups.add(group_name)
+                            evidence_map[group_name] = matched_kws
+                    elif group_name == "ai_and_ml" and "rag" in matched_kws and "llm" not in matched_kws:
                         partial_groups.add(group_name)
                         evidence_map[group_name] = matched_kws
                     elif group_name == "databases" and len(matched_kws) == 1:
+                        partial_groups.add(group_name)
+                        evidence_map[group_name] = matched_kws
+                    elif not self.is_deep_skill(resume_lower, matched_kws):
                         partial_groups.add(group_name)
                         evidence_map[group_name] = matched_kws
                     else:
@@ -174,6 +188,10 @@ class ScoringEngine:
             final_score = max(final_score, 70)
             
         final_score = round(min(max(final_score, 0), 100), 2)
+        
+        # PREVENT 100% SCORE IF PARTIAL MATCHES EXIST
+        if resume_keywords['partial_matches']:
+            final_score = min(final_score, 90)
 
         # Generate dynamic, recruiter-style multi-sentence analysis
         ex_level = self.get_match_level(final_score).upper()
@@ -237,7 +255,7 @@ You are a senior AI recruiter. Return ONLY valid JSON matching the schema exactl
 
 CRITICAL RULES:
 1. PARTIAL MATCH OVERRIDES GAP: If ANY related skill exists, NEVER mark these as Explicit Gaps. Partial Matches must NOT be listed under 'critical_gaps'. They have their own 'partial_matches' json section.
-2. NO CONTRADICTIONS: A skill cannot appear in both matches and gaps. 
+2. NO CONTRADICTIONS: A skill cannot appear in both matches and gaps. If a skill is listed in partial_matches, you MUST classify it as Partial Match. Do NOT upgrade it to Strong Match.
 3. EVIDENCE MUST BE REAL: Extract actual phrases/tools from resume. BAD: "Extracted from profile", "Related ecosystem tools". GOOD: "Worked with Django and REST API concepts", "Used Docker and Kubernetes for deployment".
 4. SUBSTITUTION IS MANDATORY: If Partial Match exists -> ALWAYS include: Required Skill, Candidate Skill (MUST BE SPECIFIC TOOLS), Transferability, Learning Curve, Explanation.
 5. ACTION PLAN MUST BE PRACTICAL: Each suggestion must include: Exact tech stack, Real deployment or project.
