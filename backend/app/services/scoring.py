@@ -179,52 +179,56 @@ class ScoringEngine:
         }
 
     def generate_llm_insights(self, resume_text: str, jd_text: str, current: Dict) -> Dict:
-        api_url = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"
-        prompt = f"""You are an expert AI recruiter refining an existing resume analysis.
+        # Use a faster, highly reliable model for JSON instruction following on free tier
+        api_url = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
         
-        INPUT:
-        Resume Text: {resume_text[:3000]}
-        Job Description: {jd_text[:3000]}
-        Current Analysis Score: {current['score']}%
+        # Limit text length to avoid token limits on free HF Inference API
+        safe_resume = resume_text[:1800]
+        safe_jd = jd_text[:1200]
         
-        INSTRUCTIONS:
-        CONVERT KEYWORD MATCHING TO CONTEXTUAL REASONING.
-        Infer hidden skills from resume. Add recruiter-level insights.
-        Transform suggestions into actionable strategy with specifics.
-        Identify substitutable skills (e.g. Docker <-> Podman).
-        
-        OUTPUT FORMAT (Strict JSON, no markdown):
-        {{
-            "refined_match_summary": "Explain WHY this score makes sense based on the JD and Resume",
-            "strong_matches": [{{"skill": "Skill Name", "reason": "Reason + Evidence"}}],
-            "critical_gaps": [{{"skill": "Skill Name", "explanation": "Explanation + whether implicit match exists"}}],
-            "inferred_skills": ["List hidden strengths derived from experience"],
-            "recruiter_insights": ["1-2 high-level observations"],
-            "action_plan": ["3-5 sharp, non-generic real project ideas/improvements"],
-            "substitutable_skills": [{{"required": "Skill", "alternative": "Skill", "explanation": "Why it's transferable"}}]
-        }}
-        """
+        prompt = f"""<|system|>
+You are an expert AI recruiter. Return ONLY a valid JSON object. Do NOT include markdown blocks. Do NOT include any extra text.
+</s>
+<|user|>
+Analyze this and return the exact JSON format requested.
+Resume: {safe_resume}
+Job Description: {safe_jd}
+Base Score: {current['score']}%
+
+Format required:
+{{
+  "refined_match_summary": "Briefly explain the score",
+  "strong_matches": [{{"skill": "Name", "reason": "Short reason"}}],
+  "critical_gaps": [{{"skill": "Name", "explanation": "Short explanation"}}],
+  "inferred_skills": ["Skill 1", "Skill 2"],
+  "recruiter_insights": ["Insight 1", "Insight 2"],
+  "action_plan": ["Action 1", "Action 2"],
+  "substitutable_skills": [{{"required": "req", "alternative": "alt", "explanation": "why"}}]
+}}
+</s>
+<|assistant|>
+{{"""
         import json
         try:
             print("DEBUG: Calling HF Instruct model for RAG insights...")
             response = requests.post(
                 api_url, 
                 headers=self.headers, 
-                json={"inputs": prompt, "parameters": {"max_new_tokens": 1200, "return_full_text": False, "temperature": 0.2}}, 
-                timeout=40
+                json={"inputs": prompt, "parameters": {"max_new_tokens": 1000, "return_full_text": False, "temperature": 0.1}}, 
+                timeout=25
             )
             if response.status_code == 200:
                 result = response.json()
-                generated_text = result[0]['generated_text'].strip()
-                if generated_text.startswith("```json"): generated_text = generated_text[7:]
-                if generated_text.startswith("```"): generated_text = generated_text[3:]
-                if generated_text.endswith("```"): generated_text = generated_text[:-3]
+                generated_text = "{" + result[0]['generated_text'].strip()
+                
+                # Further cleanup to ensure we can parse
+                generated_text = generated_text.replace("```json", "").replace("```", "").strip()
                 
                 return json.loads(generated_text)
             else:
-                print(f"HF Gen API Error: {response.text}")
+                print(f"HF Gen API Error: {response.status_code} - {response.text}")
         except Exception as e:
-            print(f"HF Gen API Exception: {e}")
+            print(f"HF Gen API Exception: {str(e)}")
             
         # Fallback
         return {

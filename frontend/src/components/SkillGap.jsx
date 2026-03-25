@@ -22,7 +22,7 @@ const SkillGap = ({ strongSkills, missingSkills, suggestions, llmInsights }) => 
           <div className="p-2 bg-green-500/20 rounded-xl"><Check className="w-6 h-6" /></div>
           Strong Matches
         </h3>
-        <div className="flex flex-col gap-4">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {hasStrongMatches ? (
             llmInsights.strong_matches.map((item, i) => (
               <motion.div 
@@ -59,7 +59,7 @@ const SkillGap = ({ strongSkills, missingSkills, suggestions, llmInsights }) => 
           <div className="p-2 bg-red-500/20 rounded-xl"><X className="w-6 h-6" /></div>
           Critical Gaps
         </h3>
-        <div className="flex flex-col gap-4">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {hasCriticalGaps ? (
             llmInsights.critical_gaps.map((item, i) => (
               <motion.div 
