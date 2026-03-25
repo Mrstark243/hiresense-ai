@@ -198,13 +198,13 @@ class ScoringEngine:
 You are a senior AI recruiter performing deep candidate evaluation. Return ONLY valid JSON matching the schema exactly. Do NOT include markdown blocks.
 
 CRITICAL SYSTEM LOGIC:
-1. NO CONTRADICTIONS: A skill cannot appear in both matches and gaps. 
-2. PARTIAL MATCH LOGIC (MANDATORY): If a related skill exists (e.g., Docker/Kubernetes -> Cloud, RAG -> LLM, MySQL -> Databases), classify as Partial Match NOT Explicit Gap. Prefer Partial Match over Explicit Gap when related foundational skills exist.
-3. EVIDENCE QUALITY RULE: Do NOT use generic phrases like 'Found in resume'. Always extract explicit human-readable evidence context (e.g. 'Developed REST APIs using Flask').
-4. ACTION PLAN QUALITY: Suggestions must be specific and practical architectures (e.g. 'Deploy a Dockerized backend on AWS EC2'), NEVER generic 'Learn Cloud'.
-5. HIRE SIGNAL LOGIC: Score > 80 -> Strong Hire. Score 60-80 -> Potential Hire. Score < 60 -> Needs Improvement.
-6. SUBSTITUTION SECTION: Mandatory if applicable (e.g. Required: Cloud, Candidate: Docker).
-7. SEMANTIC REASONING: Infer real capabilities. Evaluate production readiness.
+1. PARTIAL MATCH DETECTION (MANDATORY): If candidate has related foundational skills (e.g., Docker/Kubernetes -> Cloud -> Partial Match, RAG -> LLM -> Partial Match, MySQL -> Databases -> Strong Match), DO NOT classify these as Explicit Gaps. 
+2. EVIDENCE MUST COME FROM RESUME: Use actual phrases from resume. BAD: "Extracted from profile". GOOD: "Worked with Django framework and REST API concepts".
+3. SUBSTITUTION SECTION: MANDATORY IF APPLICABLE. Always include: Required Skill, Candidate Skill, Transferability, Learning Curve.
+4. ACTION PLAN MUST BE IMPLEMENTABLE: Each suggestion must include Exact tech stack and Real deployment or project. (BAD: "Learn cloud". GOOD: "Deploy a Dockerized backend on AWS EC2 with CI/CD using GitHub Actions").
+5. FINAL PRIORITY RULE: Prefer: Partial Match > Explicit Gap when ANY related skill exists.
+6. HIRE SIGNAL LOGIC: Score > 80 -> Strong Hire (unless major gaps exist). Score 60-80 -> Potential Hire. Score < 60 -> Needs Improvement.
+7. NO CONTRADICTIONS: A skill cannot appear in both matches and gaps.
 </s>
 <|user|>
 Analyze this candidate.
