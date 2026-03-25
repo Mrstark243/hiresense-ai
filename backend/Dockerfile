@@ -10,12 +10,8 @@ WORKDIR /app
 # Copy the requirements file and install dependencies
 COPY requirements.txt .
 
-# We download the models during build time instead of runtime
-# This prevents taking 30 seconds to wake up on the Render free tier!
-RUN pip install --no-cache-dir -r requirements.txt && \
-    python -m spacy download en_core_web_sm && \
-    python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
-
+# We only need to install pure pip dependencies now
+RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the backend files
 COPY . .
 

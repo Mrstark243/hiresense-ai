@@ -13,7 +13,7 @@ scoring_engine: ScoringEngine = None
 def get_scoring_engine():
     global scoring_engine
     if scoring_engine is None:
-        print("Initializing ML models for the first time...")
+        print("DEBUG: Initializing API-based Scoring Engine...")
         scoring_engine = ScoringEngine()
     return scoring_engine
 
@@ -37,11 +37,11 @@ async def analyze_resume(
         if not clean_text:
             raise HTTPException(status_code=400, detail="Could not extract text from PDF.")
 
-        print("DEBUG: Fetching the ScoringEngine and loading ML models into RAM...")
+        print("DEBUG: Preparing the ScoringEngine API caller...")
         # 2. Analyze using the NEW ScoringEngine logic
         engine = get_scoring_engine()
         
-        print("DEBUG: Running ML model Analysis (This is where it usually crashes if Out of Memory)...")
+        print("DEBUG: Making HTTP requests to external AI API...")
         analysis = engine.analyze(clean_text, jd)
         
         print("DEBUG: Analysis successfully finished! Returning result to Frontend...")

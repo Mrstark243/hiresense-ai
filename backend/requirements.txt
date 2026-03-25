@@ -2,7 +2,6 @@ fastapi
 uvicorn
 python-multipart
 pymupdf
-sentence-transformers
 faiss-cpu
 numpy
 pandas
@@ -11,4 +10,4 @@ pydantic-settings
 python-dotenv
 axios
 chromadb
-spacy
+requests

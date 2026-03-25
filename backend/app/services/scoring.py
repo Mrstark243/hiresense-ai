@@ -1,8 +1,10 @@
 import re
+import os
+import requests
+import numpy as np
 from typing import List, Dict
-import spacy
-from sentence_transformers import SentenceTransformer
 from numpy.linalg import norm
+from ..config import settings
 
 # Technical Skill Categories
 SKILL_CATEGORIES = {
@@ -24,33 +26,53 @@ STOP_WORDS = {
 
 class ScoringEngine:
     def __init__(self):
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
-        # Initialize spaCy for NER
+        # We use the free Hugging Face Inference API instead of running SentenceTransformer locally
+        self.api_url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
+        self.hf_token = getattr(settings, "HF_TOKEN", os.getenv("HF_TOKEN"))
+        self.headers = {"Authorization": f"Bearer {self.hf_token}"} if self.hf_token else {}
+        print("DEBUG: ScoringEngine initialized with HF API. Memory footprint: Minimal.")
+
+    def get_embedding(self, text: str) -> np.ndarray:
+        """Fetches vector embeddings from Hugging Face API"""
         try:
-            self.nlp = spacy.load('en_core_web_sm')
-        except:
-            self.nlp = None
+            # We strictly limit text to roughly 4000 chars to avoid API payload limits
+            truncated_text = text[:4000]
+            response = requests.post(
+                self.api_url, 
+                headers=self.headers, 
+                json={"inputs": [truncated_text], "options": {"wait_for_model": True}},
+                timeout=20
+            )
+            if response.status_code == 200:
+                result = response.json()
+                # The API returns a list of lists, we grab the first embedding
+                return np.array(result[0] if isinstance(result[0], list) else result)
+            else:
+                print(f"HF API Error: {response.status_code} - {response.text}")
+                return np.zeros(384) # Fallback empty vector (all-MiniLM-L6-v2 is 384d)
+        except Exception as e:
+            print(f"HF API Exception: {e}")
+            return np.zeros(384)
 
     def extract_entities(self, text: str) -> Dict:
-        """Extract Companies, Experience, and Education using spaCy"""
-        if not self.nlp:
-            return {"companies": [], "experience": "Unknown", "education": "Unknown"}
-            
-        doc = self.nlp(text[:10000]) # Limit for performance
-        companies = list(set([ent.text for ent in doc.ents if ent.label_ == "ORG"]))
-        dates = [ent.text for ent in doc.ents if ent.label_ == "DATE"]
+        """Extract Experience and Education using Heuristics (Replaces heavy spaCy model)"""
+        text_lower = text.lower()
         
         # Simple heuristic for Education
-        edu_keywords = ["Bachelor", "Master", "PhD", "University", "College", "Degree"]
+        edu_keywords = ["bachelor", "master", "phd", "university", "college", "degree", "b.sc", "b.tech", "m.sc"]
         education = "Not identified"
         for word in edu_keywords:
-            if word.lower() in text.lower():
-                education = f"{word} found"
+            if word in text_lower:
+                education = f"{word.capitalize()} found"
                 break
                 
+        # Simple heuristic for Years of Experience
+        exp_match = re.search(r'(\d+)\+?\s*(years?|yrs?)\s+(of\s+)?experience', text_lower)
+        experience = f"{exp_match.group(1)} years+" if exp_match else "Not explicitly specified"
+        
         return {
-            "companies": companies[:5],
-            "experience": f"Timeline identified in: {', '.join(dates[:3])}" if dates else "Not specified",
+            "companies": ["Analyzed via Lightweight Heuristics mode"],
+            "experience": experience,
             "education": education
         }
 
@@ -63,7 +85,6 @@ class ScoringEngine:
         for category, skills in SKILL_CATEGORIES.items():
             jd_skills = [s for s in skills if s in jd_lower]
             if not jd_skills:
-                # If JD doesn't mention this category, give a default high score or skip
                 continue
                 
             matched = [s for s in jd_skills if s in resume_lower]
@@ -72,42 +93,10 @@ class ScoringEngine:
             
         return scores
 
-    def analyze(self, resume_text: str, jd_text: str) -> Dict:
-        # Embedding-based similarity
-        resume_emb = self.model.encode(resume_text)
-        jd_emb = self.model.encode(jd_text)
-        similarity = float((resume_emb @ jd_emb.T) / (norm(resume_emb) * norm(jd_emb)))
-        score = similarity * 100
-
-        # Keyword analysis
-        resume_keywords = self.calculate_keyword_score(resume_text, jd_text)
-        entities = self.extract_entities(resume_text)
-        categories = self.calculate_category_scores(resume_text, jd_text)
-
-        # Restore perfect 60/40 scoring match calculation from original analyzer
-        total_keywords = len(resume_keywords['strong_matches']) + len(resume_keywords['missing_areas'])
-        keyword_score = (len(resume_keywords['strong_matches']) / max(total_keywords, 1)) * 100
-        
-        # Final score blending: 60% semantic similarity, 40% exact keyword match
-        final_score = (score * 0.6) + (keyword_score * 0.4)
-        final_score = round(min(max(final_score, 0), 100), 2)
-
-        return {
-            "score": final_score,
-            "explanation": f"Candidate is an {self.get_match_level(final_score)} match with a score of {final_score}%. "
-                           f"Our deep tech analysis identified key strengths in {', '.join(resume_keywords['strong_matches'][:3])}.",
-            "strong_skills": resume_keywords['strong_matches'],
-            "missing_skills": resume_keywords['missing_areas'],
-            "suggestions": self.generate_suggestions(resume_keywords['missing_areas']),
-            "entities": entities,
-            "categories": categories
-        }
-
     def calculate_keyword_score(self, resume_text: str, jd_text: str) -> Dict:
         resume_words = set(re.findall(r'\w+', resume_text.lower()))
         jd_words = set(re.findall(r'\w+', jd_text.lower()))
 
-        # Filter keywords
         jd_keywords = [w for w in jd_words if (w in TECH_KEYWORDS or (len(w) > 3 and w not in STOP_WORDS))]
         
         strong_matches = [w for w in jd_keywords if w in resume_words]
@@ -116,6 +105,45 @@ class ScoringEngine:
         return {
             "strong_matches": list(set(strong_matches)),
             "missing_areas": list(set(missing_areas))
+        }
+
+    def analyze(self, resume_text: str, jd_text: str) -> Dict:
+        print("DEBUG: Sending text to Hugging Face API for vector embeddings...")
+        resume_emb = self.get_embedding(resume_text)
+        jd_emb = self.get_embedding(jd_text)
+        
+        # Semantic similarity
+        if norm(resume_emb) == 0 or norm(jd_emb) == 0:
+            score = 0  # Fallback if API totally failed
+        else:
+            similarity = float((resume_emb @ jd_emb.T) / (norm(resume_emb) * norm(jd_emb)))
+            score = similarity * 100
+
+        # Keyword analysis
+        resume_keywords = self.calculate_keyword_score(resume_text, jd_text)
+        entities = self.extract_entities(resume_text)
+        categories = self.calculate_category_scores(resume_text, jd_text)
+
+        total_keywords = len(resume_keywords['strong_matches']) + len(resume_keywords['missing_areas'])
+        keyword_score = (len(resume_keywords['strong_matches']) / max(total_keywords, 1)) * 100
+        
+        # Final score blending: 60% semantic similarity, 40% exact keyword match
+        final_score = (score * 0.6) + (keyword_score * 0.4)
+        # If API failed, lean 100% on keyword matching
+        if score == 0:
+            final_score = keyword_score
+            
+        final_score = round(min(max(final_score, 0), 100), 2)
+
+        return {
+            "score": final_score,
+            "explanation": f"Candidate is an {self.get_match_level(final_score)} match with a score of {final_score}%. "
+                           f"Key strengths identified in {', '.join(resume_keywords['strong_matches'][:3]) if resume_keywords['strong_matches'] else 'general areas'}.",
+            "strong_skills": resume_keywords['strong_matches'],
+            "missing_skills": resume_keywords['missing_areas'],
+            "suggestions": self.generate_suggestions(resume_keywords['missing_areas']),
+            "entities": entities,
+            "categories": categories
         }
 
     def get_match_level(self, score: float) -> str:
@@ -136,4 +164,3 @@ class ScoringEngine:
         suggestions.append("Ensure your summary highlights your most relevant projects for this specific job description.")
         return suggestions
 
-from numpy.linalg import norm
