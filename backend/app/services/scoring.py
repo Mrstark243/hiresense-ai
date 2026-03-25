@@ -8,11 +8,11 @@ from ..config import settings
 
 # Technical Skill Categories
 SKILL_CATEGORIES = {
-    "Frontend": ["react", "vue", "angular", "next.js", "tailwind", "html", "css", "javascript", "typescript"],
-    "Backend": ["fastapi", "flask", "django", "node.js", "express", "go", "rust", "python"],
-    "Databases": ["postgresql", "mongodb", "sql", "nosql", "redis", "elasticsearch", "pinecone", "chroma"],
-    "Cloud/DevOps": ["aws", "docker", "kubernetes", "git", "ci/cd", "terraform", "azure", "gcp"],
-    "AI/ML": ["pytorch", "tensorflow", "rag", "embeddings", "nlp", "transformers", "llm", "langchain"]
+    "Frontend": ["react", "vue", "angular", "next.js", "tailwind", "html", "css", "javascript", "typescript", "flutter", "responsive"],
+    "Backend": ["fastapi", "flask", "django", "node.js", "express", "go", "rust", "python", "java", "spring", "boot", "node", "rest", "restful", "apis", "api", "frameworks", "backend"],
+    "Databases": ["postgresql", "mongodb", "sql", "nosql", "redis", "elasticsearch", "pinecone", "chroma", "mysql", "database", "databases"],
+    "Cloud/DevOps": ["aws", "docker", "kubernetes", "git", "ci/cd", "terraform", "azure", "gcp", "github", "pipelines", "cloud", "production", "scalability"],
+    "AI/ML": ["pytorch", "tensorflow", "rag", "embeddings", "nlp", "transformers", "llm", "langchain", "models", "evaluation", "openai", "huggingface", "ai", "semantic"]
 }
 
 TECH_KEYWORDS = [item for sublist in SKILL_CATEGORIES.values() for item in sublist]
@@ -97,7 +97,8 @@ class ScoringEngine:
         resume_words = set(re.findall(r'\w+', resume_text.lower()))
         jd_words = set(re.findall(r'\w+', jd_text.lower()))
 
-        jd_keywords = [w for w in jd_words if (w in TECH_KEYWORDS or (len(w) > 3 and w not in STOP_WORDS))]
+        # ONLY match rigorous technical keywords to avoid generic English words like "hands", "with", "data"
+        jd_keywords = [w for w in jd_words if w in TECH_KEYWORDS]
         
         strong_matches = [w for w in jd_keywords if w in resume_words]
         missing_areas = [w for w in jd_keywords if w not in resume_words]
