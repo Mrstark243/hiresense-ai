@@ -213,7 +213,7 @@ class ScoringEngine:
         ex_level = self.get_match_level(final_score).upper()
         
         if resume_keywords['strong_matches']:
-            strengths_str = ", ".join([sk.title() for sk in resume_keywords['strong_matches'][:4]])
+            strengths_str = ", ".join([sk.replace('_', ' ').title() for sk in resume_keywords['strong_matches'][:4]])
             base_exp = f"This resume represents a {ex_level} match for the role ({final_score}% relevance). The candidate showcases a robust technical foundation, particularly excelling in {strengths_str}."
         else:
             base_exp = f"This resume indicates a {ex_level} match ({final_score}% relevance). However, it struggles to demonstrate the core technical competencies required for this specific role."
@@ -356,10 +356,21 @@ Format required (STRICT JSON ONLY):
         if not action_plan and current["partial_skills"]:
             action_plan.append({"type": "Project", "title": f"Deepen {current['partial_skills'][0].replace('_', ' ').title()} expertise", "description": "Deploy a comprehensive project utilizing native stack components over foundational abstractions.", "impact": "Converts partial foundational experience into mastery."})
             
+        # Ensure 3 items mathematically
+        generic_plans = [
+             {"type": "Resume", "title": "Highlight System Design", "description": "Quantify architectural decisions rather than just listing adjacent tools.", "impact": "Proves senior-level awareness."},
+             {"type": "Project", "title": "End-to-End Orchestration", "description": "Construct an automated CI/CD pipeline unifying microservices.", "impact": "Validates enterprise readiness."},
+             {"type": "Skill", "title": "Domain Driven Design", "description": "Implement strict DDD boundaries in a side API project.", "impact": "Elevates abstract engineering capabilities."}
+        ]
+        gp_idx = 0
+        while len(action_plan) < 3 and gp_idx < len(generic_plans):
+             action_plan.append(generic_plans[gp_idx])
+             gp_idx += 1
+            
         strong_matches = []
         for s in current["strong_skills"]:
             evidence_str = ", ".join(current["evidence_map"].get(s, [s]))
-            strong_matches.append({"skill": s.replace('_', ' ').title(), "level": "Intermediate", "reason": "Demonstrated capability in this required domain group.", "evidence": f"Experience aligned via '{evidence_str}' usage extracted from profile."})
+            strong_matches.append({"skill": s.replace('_', ' ').title(), "level": "Intermediate", "reason": "Demonstrated capability in this required domain group.", "evidence": f"Experience aligned via '{evidence_str}'."})
 
         return {
             "refined_match_summary": current["explanation"],
