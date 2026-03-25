@@ -6,16 +6,17 @@ from typing import List, Dict
 from numpy.linalg import norm
 from ..config import settings
 
-# Technical Skill Categories
-SKILL_CATEGORIES = {
-    "Frontend": ["react", "vue", "angular", "next.js", "tailwind", "html", "css", "javascript", "typescript", "flutter", "responsive"],
-    "Backend": ["fastapi", "flask", "django", "node.js", "express", "go", "rust", "python", "java", "spring", "boot", "node", "rest", "restful", "apis", "api", "frameworks", "backend"],
-    "Databases": ["postgresql", "mongodb", "sql", "nosql", "redis", "elasticsearch", "pinecone", "chroma", "mysql", "database", "databases"],
-    "Cloud/DevOps": ["aws", "docker", "kubernetes", "git", "ci/cd", "terraform", "azure", "gcp", "github", "pipelines", "cloud", "production", "scalability"],
-    "AI/ML": ["pytorch", "tensorflow", "rag", "embeddings", "nlp", "transformers", "llm", "langchain", "models", "evaluation", "openai", "huggingface", "ai", "semantic"]
+# Semantic Skill Normalization Groups
+SKILL_GROUPS = {
+    "api_development": ["rest", "restful", "api", "apis"],
+    "databases": ["mysql", "postgresql", "sql", "database"],
+    "nosql": ["mongodb", "redis", "elasticsearch", "pinecone", "chroma"],
+    "cloud": ["aws", "gcp", "azure", "cloud"],
+    "devops": ["docker", "kubernetes", "ci", "cd", "pipelines", "ci/cd", "terraform"],
+    "backend": ["fastapi", "flask", "django", "node", "node.js", "express", "go", "rust", "python", "java", "spring", "backend"],
+    "frontend": ["react", "vue", "angular", "next.js", "tailwind", "html", "css", "javascript", "typescript", "responsive"],
+    "ai_and_ml": ["rag", "llm", "nlp", "transformers", "pytorch", "tensorflow", "openai", "huggingface", "embeddings", "langchain", "semantic", "ai"]
 }
-
-TECH_KEYWORDS = [item for sublist in SKILL_CATEGORIES.values() for item in sublist]
 
 STOP_WORDS = {
     'experience', 'work', 'using', 'used', 'like', 'plus', 'requirements', 
@@ -77,35 +78,42 @@ class ScoringEngine:
         }
 
     def calculate_category_scores(self, resume_text: str, jd_text: str) -> List[Dict]:
-        """Calculate match scores per category for the Radar Chart"""
+        """Calculate match scores per semantic group for visualization"""
         scores = []
         resume_lower = resume_text.lower()
         jd_lower = jd_text.lower()
         
-        for category, skills in SKILL_CATEGORIES.items():
+        for category, skills in SKILL_GROUPS.items():
             jd_skills = [s for s in skills if s in jd_lower]
             if not jd_skills:
                 continue
                 
             matched = [s for s in jd_skills if s in resume_lower]
             score = (len(matched) / len(jd_skills)) * 100 if jd_skills else 0
-            scores.append({"category": category, "score": round(score)})
+            scores.append({"category": category.replace('_', ' ').capitalize(), "score": round(score)})
             
         return scores
 
     def calculate_keyword_score(self, resume_text: str, jd_text: str) -> Dict:
-        resume_words = set(re.findall(r'\w+', resume_text.lower()))
-        jd_words = set(re.findall(r'\w+', jd_text.lower()))
+        resume_lower = resume_text.lower()
+        jd_lower = jd_text.lower()
 
-        # ONLY match rigorous technical keywords to avoid generic English words like "hands", "with", "data"
-        jd_keywords = [w for w in jd_words if w in TECH_KEYWORDS]
-        
-        strong_matches = [w for w in jd_keywords if w in resume_words]
-        missing_areas = [w for w in jd_keywords if w not in resume_words]
+        strong_groups = set()
+        missing_groups = set()
+
+        # Semantic Group Matching (replacing raw keyword collision)
+        for group_name, keywords in SKILL_GROUPS.items():
+            # If the JD asks for any term in this semantic group
+            if any(kw in jd_lower for kw in keywords):
+                # Check if the Candidate possesses any overlapping term for that group
+                if any(kw in resume_lower for kw in keywords):
+                    strong_groups.add(group_name)
+                else:
+                    missing_groups.add(group_name)
 
         return {
-            "strong_matches": list(set(strong_matches)),
-            "missing_areas": list(set(missing_areas))
+            "strong_matches": list(strong_groups),
+            "missing_areas": list(missing_groups)
         }
 
     def analyze(self, resume_text: str, jd_text: str) -> Dict:
@@ -187,18 +195,24 @@ class ScoringEngine:
         safe_jd = jd_text[:1200]
         
         prompt = f"""<|system|>
-You are a senior AI recruiter performing deep candidate evaluation. Return ONLY valid JSON matching the schema exactly. Do NOT include markdown blocks. Do NOT include any extra text.
+You are a senior AI recruiter performing deep candidate evaluation. Return ONLY valid JSON matching the schema exactly. Do NOT include markdown blocks.
 
 CRITICAL SYSTEM LOGIC:
-1. SKILL NORMALIZATION: Prioritize semantic meaning over exact match (e.g. FastAPI -> API Development).
-2. STRICT CONTRADICTION RULE: A skill MUST NOT appear in both strong matches and gaps. If related skill exists, classify as Partial Match, NOT Explicit Gap.
-3. SEMANTIC REASONING: Evaluate depth, production readiness.
+1. NO CONTRADICTIONS: A skill cannot appear in both matches and gaps. 
+2. PARTIAL MATCH LOGIC: If a related skill exists (e.g., Docker for Cloud), classify as Partial Match.
+3. SEMANTIC REASONING: Infer real capabilities. Evaluate production readiness.
 </s>
 <|user|>
 Analyze this candidate.
 Resume: {safe_resume}
 Job Description: {safe_jd}
 Pre-processed Base Score: {current['score']}%
+
+IMPORTANT: You are given Preprocessed Skill Groups:
+- strong_matches: {current['strong_skills']}
+- missing_skills: {current['missing_skills']}
+
+These skills are already normalized and grouped by the engine. Do NOT treat them as raw keywords. Use these to anchor your reasoning for the final generation.
 
 Format required (STRICT JSON ONLY):
 {{
@@ -238,18 +252,18 @@ Format required (STRICT JSON ONLY):
         except Exception as e:
             print(f"HF Gen API Exception: {str(e)}")
             
-        # Fallback
+        # Fallback ensuring clean group-level response
         return {
             "refined_match_summary": current["explanation"],
             "match_score": current['score'],
             "confidence_score": "Medium",
             "hire_signal": "Needs Improvement" if current['score'] < 50 else "Potential Hire",
-            "strong_matches": [{"skill": s, "level": "Intermediate", "reason": "Extracted via keyword matching", "evidence": "Found in resume text"} for s in current["strong_skills"]],
-            "critical_gaps": [{"skill": s, "classification": "Explicit Gap", "explanation": "Missing core requirement", "evidence": "Not found in text"} for s in current["missing_skills"]],
+            "strong_matches": [{"skill": s.replace('_', ' ').title(), "level": "Intermediate", "reason": "Demonstrated capability in this required domain group.", "evidence": "Corroborated by semantic normalization mapping"} for s in current["strong_skills"]],
+            "critical_gaps": [{"skill": s.replace('_', ' ').title(), "classification": "Explicit Gap", "explanation": "This ecosystem capability is completely missing.", "evidence": "No overlapping skills detected in group"} for s in current["missing_skills"]],
             "substitutable_skills": [],
             "inferred_skills": [],
-            "recruiter_insights": [],
-            "action_plan": [{"type": "Skill", "title": "Address Gaps", "description": s, "impact": "Improves keyword alignment"} for s in current["suggestions"]]
+            "recruiter_insights": ["The candidate requires more targeted ecosystem exposure to clear the screening phase."],
+            "action_plan": [{"type": "Skill", "title": f"Master {s.replace('_', ' ').title()}", "description": "Acquire fundamental capabilities in this domain.", "impact": "Directly bridges a core JD requirement."} for s in current["missing_skills"]]
         }
 
     def get_match_level(self, score: float) -> str:
@@ -260,27 +274,26 @@ Format required (STRICT JSON ONLY):
 
     def generate_suggestions(self, strong_skills: List[str], missing_skills: List[str]) -> List[str]:
         suggestions = []
-        tech_missing = [s for s in missing_skills if s in TECH_KEYWORDS]
         
         # 1. Address Missing Gaps to standout
-        if tech_missing:
-            top_missing = tech_missing[:3]
-            suggestions.append(f"CRITICAL GAP: The JD heavily emphasizes {', '.join([m.title() for m in top_missing])}. If you have even partial experience with these, add a dedicated bullet point detailing a project where you utilized them.")
+        if missing_skills:
+            top_missing = [s.replace('_', ' ').title() for s in missing_skills[:3]]
+            suggestions.append(f"CRITICAL GAP: The JD heavily emphasizes {', '.join(top_missing)}. If you have even partial experience with these domains, add a dedicated bullet point detailing a project where you utilized them.")
         else:
-            suggestions.append("YOUR ADVANTAGE: Your skill stack perfectly aligns with the JD! Focus entirely on quantifying your impact rather than adding new buzzwords.")
+            suggestions.append("YOUR ADVANTAGE: Your skill stack perfectly aligns with the JD's semantic requirements! Focus entirely on quantifying your impact.")
 
         # 2. Leverage Existing Strengths
         if strong_skills:
-            top_strength = strong_skills[0].title()
-            suggestions.append(f"SHOWCASE EXPERTISE: You matched on '{top_strength}'. Don't just list it—prove it. Add metrics (e.g., 'Scaled a {top_strength} application to handle 10k+ daily active users' or 'Reduced latency by 30% using {top_strength}').")
+            top_strength = strong_skills[0].replace('_', ' ').title()
+            suggestions.append(f"SHOWCASE EXPERTISE: You demonstrated a strong foundation in '{top_strength}'. Don't just list it—prove it. Add metrics to measure scale and impact.")
         
         # 3. Actionable Portfolio tip
-        if "github" in missing_skills or "git" in missing_skills:
-            suggestions.append("PORTFOLIO TIP: The recruiter is looking for version control / GitHub experience. Link a live codebase or open-source contribution at the very top of your resume.")
-        elif tech_missing:
-            suggestions.append(f"STAND OUT: To beat out senior candidates, build and deploy a rapid weekend prototype combining your existing skills with {tech_missing[0].title()}, and hyperlink it in your resume header.")
+        if "cloud" in missing_skills or "devops" in missing_skills:
+            suggestions.append("PORTFOLIO TIP: The recruiter is looking for deployment experience. Link a live codebase or open-source contribution deployed on a public cloud.")
+        elif missing_skills:
+            suggestions.append(f"STAND OUT: Build and deploy a rapid weekend prototype combining your existing skills with {missing_skills[0].replace('_', ' ').title()}, and hyperlink it in your resume header.")
         else:
-            suggestions.append("STAND OUT: You are a top-tier match. Ensure your LinkedIn profile is equally optimized and reach out directly to the hiring manager with a brief summary of how your stack perfectly mirrors their requirements.")
+            suggestions.append("STAND OUT: You are a top-tier match. Ensure your LinkedIn profile is equally optimized.")
 
         return suggestions
 
