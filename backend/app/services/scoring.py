@@ -232,11 +232,11 @@ Format required:
             
         # Fallback
         return {
-            "refined_match_summary": current["explanation"] + " (Note: Deep Insights fallback activated due to high AI load.)",
+            "refined_match_summary": current["explanation"],
             "strong_matches": [{"skill": s, "reason": "Matching keyword"} for s in current["strong_skills"]],
             "critical_gaps": [{"skill": s, "explanation": "Missing core requirement"} for s in current["missing_skills"]],
-            "inferred_skills": ["Evaluated via exact matching algorithms (AI inference temporarily unavailable)."],
-            "recruiter_insights": ["Solid baseline matching completed. Review manual checks for nuanced overlaps."],
+            "inferred_skills": [],
+            "recruiter_insights": [],
             "action_plan": current["suggestions"],
             "substitutable_skills": []
         }
