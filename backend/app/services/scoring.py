@@ -106,8 +106,8 @@ class ScoringEngine:
         # Semantic Group Matching (replacing raw keyword collision)
         for group_name, keywords in SKILL_GROUPS.items():
             # If the JD asks for any term in this semantic group
-            if any(kw in jd_lower for kw in keywords):
-                matched_kws = [kw for kw in keywords if kw in resume_lower]
+            if any(re.search(rf'\b{re.escape(kw)}\b', jd_lower) for kw in keywords):
+                matched_kws = [kw for kw in keywords if re.search(rf'\b{re.escape(kw)}\b', resume_lower)]
                 
                 if matched_kws:
                     evidence_map[group_name] = matched_kws
@@ -138,7 +138,7 @@ class ScoringEngine:
                             
                     # DEVOPS
                     elif group_name == "devops":
-                        if "docker" in resume_lower and "kubernetes" in resume_lower:
+                        if re.search(r'\bdocker\b', resume_lower) and re.search(r'\bkubernetes\b', resume_lower):
                             strong_groups.add(group_name)
                         else:
                             partial_groups.add(group_name)
@@ -146,7 +146,7 @@ class ScoringEngine:
                     # BACKEND
                     elif group_name == "backend":
                         backend_frameworks = ["fastapi", "django", "flask", "node", "express", "spring"]
-                        if any(f in resume_lower for f in backend_frameworks) and "api" in resume_lower:
+                        if any(re.search(rf'\b{re.escape(f)}\b', resume_lower) for f in backend_frameworks) and re.search(r'\bapi\b', resume_lower):
                             strong_groups.add(group_name)
                         else:
                             partial_groups.add(group_name)
@@ -155,7 +155,16 @@ class ScoringEngine:
                     else:
                         partial_groups.add(group_name)
                 else:
-                    missing_groups.add(group_name)
+                    # Semantic Proxy: Docker/K8s gives partial Cloud credit
+                    if group_name == "cloud":
+                        proxy_kws = [k for k in ["docker", "kubernetes"] if re.search(rf'\b{re.escape(k)}\b', resume_lower)]
+                        if proxy_kws:
+                            partial_groups.add(group_name)
+                            evidence_map[group_name] = proxy_kws
+                        else:
+                            missing_groups.add(group_name)
+                    else:
+                        missing_groups.add(group_name)
                     
         print("STRONG:", strong_groups)
         print("PARTIAL:", partial_groups)
