@@ -99,20 +99,35 @@ class ScoringEngine:
         jd_lower = jd_text.lower()
 
         strong_groups = set()
+        partial_groups = set()
         missing_groups = set()
 
         # Semantic Group Matching (replacing raw keyword collision)
         for group_name, keywords in SKILL_GROUPS.items():
             # If the JD asks for any term in this semantic group
             if any(kw in jd_lower for kw in keywords):
-                # Check if the Candidate possesses any overlapping term for that group
-                if any(kw in resume_lower for kw in keywords):
-                    strong_groups.add(group_name)
+                matched_kws = [kw for kw in keywords if kw in resume_lower]
+                
+                if matched_kws:
+                    # Specific algorithmic partial match overrides
+                    if group_name == "ai_and_ml" and "rag" in matched_kws and "llm" not in matched_kws:
+                        partial_groups.add(group_name)
+                    elif group_name == "databases" and len(matched_kws) == 1:
+                        partial_groups.add(group_name)
+                    else:
+                        strong_groups.add(group_name)
                 else:
-                    missing_groups.add(group_name)
+                    # Check for related foundational skills indicating a Partial Match
+                    if group_name == "cloud" and ("docker" in resume_lower or "kubernetes" in resume_lower):
+                        partial_groups.add(group_name)
+                    elif group_name == "api_development" and ("fastapi" in resume_lower or "django" in resume_lower):
+                        partial_groups.add(group_name)
+                    else:
+                        missing_groups.add(group_name)
 
         return {
             "strong_matches": list(strong_groups),
+            "partial_matches": list(partial_groups),
             "missing_areas": list(missing_groups)
         }
 
@@ -168,6 +183,7 @@ class ScoringEngine:
             "score": final_score,
             "explanation": base_exp,
             "strong_skills": resume_keywords['strong_matches'],
+            "partial_skills": resume_keywords['partial_matches'],
             "missing_skills": resume_keywords['missing_areas'],
             "suggestions": self.generate_suggestions(resume_keywords['strong_matches'], resume_keywords['missing_areas'])
         }
@@ -195,16 +211,15 @@ class ScoringEngine:
         safe_jd = jd_text[:1200]
         
         prompt = f"""<|system|>
-You are a senior AI recruiter performing deep candidate evaluation. Return ONLY valid JSON matching the schema exactly. Do NOT include markdown blocks.
+You are a senior AI recruiter. Return ONLY valid JSON matching the schema exactly. Do NOT include markdown blocks.
 
-CRITICAL SYSTEM LOGIC:
-1. PARTIAL MATCH DETECTION (MANDATORY): If candidate has related foundational skills (e.g., Docker/Kubernetes -> Cloud -> Partial Match, RAG -> LLM -> Partial Match, MySQL -> Databases -> Strong Match), DO NOT classify these as Explicit Gaps. 
-2. EVIDENCE MUST COME FROM RESUME: Use actual phrases from resume. BAD: "Extracted from profile". GOOD: "Worked with Django framework and REST API concepts".
-3. SUBSTITUTION SECTION: MANDATORY IF APPLICABLE. Always include: Required Skill, Candidate Skill, Transferability, Learning Curve.
-4. ACTION PLAN MUST BE IMPLEMENTABLE: Each suggestion must include Exact tech stack and Real deployment or project. (BAD: "Learn cloud". GOOD: "Deploy a Dockerized backend on AWS EC2 with CI/CD using GitHub Actions").
-5. FINAL PRIORITY RULE: Prefer: Partial Match > Explicit Gap when ANY related skill exists.
-6. HIRE SIGNAL LOGIC: Score > 80 -> Strong Hire (unless major gaps exist). Score 60-80 -> Potential Hire. Score < 60 -> Needs Improvement.
-7. NO CONTRADICTIONS: A skill cannot appear in both matches and gaps.
+CRITICAL RULES:
+1. PARTIAL MATCH IS AUTHORITATIVE: If a skill is in partial_matches, MUST classify as "Partial Match". NEVER mark as Explicit Gap. Examples: Docker/Kubernetes -> Cloud -> Partial Match.
+2. NO CONTRADICTIONS: A skill cannot appear in both matches and gaps. 
+3. EVIDENCE MUST BE REAL: Use actual resume context. BAD: "Extracted from profile". GOOD: "Worked with Django framework and REST API concepts", "Used Docker and Kubernetes for deployment".
+4. SUBSTITUTION IS MANDATORY: If Partial Match exists, ALWAYS include: Required Skill, Candidate Skill, Transferability (High/Medium/Low), Learning Curve, Explanation.
+5. ACTION PLAN MUST BE PRACTICAL: BAD: "Learn cloud". GOOD: "Deploy a Dockerized Django app on AWS EC2 using Nginx and GitHub Actions CI/CD".
+6. HIRE SIGNAL RULE: Score > 80 -> Strong Hire. Score 60-80 -> Potential Hire. Score < 60 -> Needs Improvement.
 </s>
 <|user|>
 Analyze this candidate.
@@ -214,19 +229,20 @@ Pre-processed Base Score: {current['score']}%
 
 IMPORTANT: You are given Preprocessed Skill Groups:
 - strong_matches: {current['strong_skills']}
+- partial_matches: {current['partial_skills']}
 - missing_skills: {current['missing_skills']}
 
-These skills are already normalized and grouped by the engine. Do NOT treat them as raw keywords. Use these to anchor your reasoning for the final generation.
+These skills are already normalized and grouped by the engine. Do NOT treat them as raw keywords. Evaluate candidate potential and adaptability.
 
 Format required (STRICT JSON ONLY):
 {{
-  "refined_match_summary": "Explain the match score based on skill depth, production readiness",
+  "refined_match_summary": "...",
   "match_score": {current['score']},
   "confidence_score": "High | Medium | Low",
   "hire_signal": "Strong Hire | Potential Hire | Needs Improvement | Not Ready",
   "strong_matches": [{{"skill": "...", "level": "Beginner | Intermediate | Advanced", "reason": "...", "evidence": "Specific evidence from resume"}}],
   "critical_gaps": [{{"skill": "...", "classification": "Explicit Gap | Partial Match | Weak Match", "explanation": "...", "evidence": "..."}}],
-  "substitutable_skills": [{{"required": "...", "candidate": "...", "transferability": "High | Medium | Low", "learning_curve": "..."}}],
+  "substitutable_skills": [{{"required": "...", "candidate": "...", "transferability": "High | Medium | Low", "learning_curve": "...", "explanation": "..."}}],
   "inferred_skills": [{{"skill": "...", "derived_from": "...", "reason": "..."}}],
   "recruiter_insights": ["..."],
   "action_plan": [{{"type": "Project | Resume | Skill", "title": "...", "description": "...", "impact": "..."}}]
@@ -257,17 +273,39 @@ Format required (STRICT JSON ONLY):
             print(f"HF Gen API Exception: {str(e)}")
             
         # Fallback ensuring clean group-level response
+        critical_gaps = []
+        for s in current["partial_skills"]:
+            critical_gaps.append({"skill": s.replace('_', ' ').title(), "classification": "Partial Match", "explanation": "Candidate demonstrates foundational exposure through related tools.", "evidence": "Related ecosystem tools detected in candidate profile"})
+        for s in current["missing_skills"]:
+            critical_gaps.append({"skill": s.replace('_', ' ').title(), "classification": "Explicit Gap", "explanation": "This ecosystem capability is completely missing from the candidate's core stack.", "evidence": "No related tools or abstract domains matched"})
+            
+        substitutions = []
+        for s in current["partial_skills"]:
+             substitutions.append({
+                 "required": s.replace('_', ' ').title(), 
+                 "candidate": "Related Ecosystem Tools", 
+                 "transferability": "High", 
+                 "learning_curve": "Minimal upskilling required; core concepts align.", 
+                 "explanation": "Candidate possesses adjacent capability which translates easily to this requirement."
+             })
+             
+        action_plan = []
+        for s in current["missing_skills"]:
+            action_plan.append({"type": "Project", "title": f"Productionize {s.replace('_', ' ').title()}", "description": f"Build and deploy a scalable architecture prototype leveraging {s.replace('_', ' ').title()} to prove production readiness.", "impact": "Directly bridges a core JD architectural requirement"})
+        if not action_plan and current["partial_skills"]:
+            action_plan.append({"type": "Project", "title": f"Deepen {current['partial_skills'][0].replace('_', ' ').title()} expertise", "description": "Deploy a comprehensive project utilizing native stack components over foundational abstractions.", "impact": "Converts partial foundational experience into mastery."})
+            
         return {
             "refined_match_summary": current["explanation"],
             "match_score": current['score'],
             "confidence_score": "Medium",
             "hire_signal": "Strong Hire" if current['score'] > 80 else "Potential Hire" if current['score'] >= 60 else "Needs Improvement",
             "strong_matches": [{"skill": s.replace('_', ' ').title(), "level": "Intermediate", "reason": "Demonstrated capability in this required domain group.", "evidence": "Extracted related foundational experience from candidate profile"} for s in current["strong_skills"]],
-            "critical_gaps": [{"skill": s.replace('_', ' ').title(), "classification": "Explicit Gap", "explanation": "This ecosystem capability is completely missing from the candidate's core stack.", "evidence": "No related tools or abstract domains matched"} for s in current["missing_skills"]],
-            "substitutable_skills": [],
+            "critical_gaps": critical_gaps,
+            "substitutable_skills": substitutions,
             "inferred_skills": [],
             "recruiter_insights": ["The candidate requires more targeted ecosystem exposure to clear the screening phase."],
-            "action_plan": [{"type": "Project", "title": f"Productionize {s.replace('_', ' ').title()}", "description": f"Build and deploy a scalable architecture prototype leveraging {s.replace('_', ' ').title()} to prove production readiness.", "impact": "Directly bridges a core JD architectural requirement"} for s in current["missing_skills"]]
+            "action_plan": action_plan
         }
 
     def get_match_level(self, score: float) -> str:
