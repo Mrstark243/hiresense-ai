@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 
 const SkillGap = ({ strongSkills, missingSkills, suggestions, llmInsights }) => {
   const hasStrongMatches = llmInsights?.strong_matches?.length > 0;
+  const hasPartialMatches = llmInsights?.partial_matches?.length > 0;
   const hasCriticalGaps = llmInsights?.critical_gaps?.length > 0;
   const actionPlan = llmInsights?.action_plan?.length > 0 ? llmInsights.action_plan : suggestions;
   
@@ -99,6 +100,42 @@ const SkillGap = ({ strongSkills, missingSkills, suggestions, llmInsights }) => 
           )}
         </div>
       </motion.div>
+
+      {/* Partial Matches */}
+      {hasPartialMatches && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="lg:col-span-2 premium-card p-10 bg-slate-900/40 border-yellow-500/20 relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 p-4 opacity-5">
+             <AlertCircle size={80} className="text-yellow-500" />
+          </div>
+          <h3 className="text-2xl font-black mb-8 flex items-center gap-4 text-yellow-400">
+            <div className="p-2 bg-yellow-500/20 rounded-xl"><Check className="w-5 h-5" /></div>
+            Partial Matches (Foundational Exposure)
+          </h3>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {llmInsights.partial_matches.map((item, i) => (
+              <motion.div 
+                key={i} 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.1 }}
+                className="bg-yellow-500/10 border border-yellow-500/20 p-5 rounded-3xl shadow-lg relative"
+              >
+                <div className="text-yellow-400 font-black text-xl mb-2">{item.skill}</div>
+                <div className="text-yellow-100/80 text-sm leading-relaxed mb-3">{item.reason}</div>
+                {item.evidence && (
+                  <div className="text-xs bg-slate-900/50 p-2 rounded-xl text-yellow-200/50 italic border-l-2 border-yellow-500/30">
+                    "{item.evidence}"
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* Substitutable Skills & Inferred Skills */}
       {llmInsights?.substitutable_skills?.length > 0 && (

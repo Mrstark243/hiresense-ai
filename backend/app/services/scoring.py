@@ -101,6 +101,7 @@ class ScoringEngine:
         strong_groups = set()
         partial_groups = set()
         missing_groups = set()
+        evidence_map = {}
 
         # Semantic Group Matching (replacing raw keyword collision)
         for group_name, keywords in SKILL_GROUPS.items():
@@ -112,23 +113,32 @@ class ScoringEngine:
                     # Specific algorithmic partial match overrides
                     if group_name == "ai_and_ml" and "rag" in matched_kws and "llm" not in matched_kws:
                         partial_groups.add(group_name)
+                        evidence_map[group_name] = matched_kws
                     elif group_name == "databases" and len(matched_kws) == 1:
                         partial_groups.add(group_name)
+                        evidence_map[group_name] = matched_kws
                     else:
                         strong_groups.add(group_name)
+                        evidence_map[group_name] = matched_kws
                 else:
                     # Check for related foundational skills indicating a Partial Match
-                    if group_name == "cloud" and ("docker" in resume_lower or "kubernetes" in resume_lower):
+                    partial_kws = []
+                    if group_name == "cloud":
+                        partial_kws = [k for k in ["docker", "kubernetes", "linux"] if k in resume_lower]
+                    elif group_name == "api_development":
+                        partial_kws = [k for k in ["fastapi", "django", "flask", "node"] if k in resume_lower]
+                        
+                    if partial_kws:
                         partial_groups.add(group_name)
-                    elif group_name == "api_development" and ("fastapi" in resume_lower or "django" in resume_lower):
-                        partial_groups.add(group_name)
+                        evidence_map[group_name] = partial_kws
                     else:
                         missing_groups.add(group_name)
 
         return {
             "strong_matches": list(strong_groups),
             "partial_matches": list(partial_groups),
-            "missing_areas": list(missing_groups)
+            "missing_areas": list(missing_groups),
+            "evidence_map": evidence_map
         }
 
     def analyze(self, resume_text: str, jd_text: str) -> Dict:
@@ -148,7 +158,7 @@ class ScoringEngine:
         entities = self.extract_entities(resume_text)
         categories = self.calculate_category_scores(resume_text, jd_text)
 
-        total_keywords = len(resume_keywords['strong_matches']) + len(resume_keywords['missing_areas'])
+        total_keywords = len(resume_keywords['strong_matches']) + len(resume_keywords['missing_areas']) + len(resume_keywords['partial_matches'])
         keyword_score = (len(resume_keywords['strong_matches']) / max(total_keywords, 1)) * 100
         
         # Final score blending: 60% semantic similarity, 40% exact keyword match
@@ -156,6 +166,13 @@ class ScoringEngine:
         # If API failed, lean 100% on keyword matching
         if score == 0:
             final_score = keyword_score
+            
+        # Apply Partial Match Penalties
+        num_partials = len(resume_keywords['partial_matches'])
+        if num_partials >= 3:
+            final_score -= 15
+        elif num_partials >= 1:
+            final_score -= 7
             
         final_score = round(min(max(final_score, 0), 100), 2)
 
@@ -185,6 +202,7 @@ class ScoringEngine:
             "strong_skills": resume_keywords['strong_matches'],
             "partial_skills": resume_keywords['partial_matches'],
             "missing_skills": resume_keywords['missing_areas'],
+            "evidence_map": resume_keywords.get('evidence_map', {}),
             "suggestions": self.generate_suggestions(resume_keywords['strong_matches'], resume_keywords['missing_areas'])
         }
 
@@ -214,11 +232,11 @@ class ScoringEngine:
 You are a senior AI recruiter. Return ONLY valid JSON matching the schema exactly. Do NOT include markdown blocks.
 
 CRITICAL RULES:
-1. PARTIAL MATCH IS AUTHORITATIVE: If a skill is in partial_matches, MUST classify as "Partial Match". NEVER mark as Explicit Gap. Examples: Docker/Kubernetes -> Cloud -> Partial Match.
+1. PARTIAL MATCH OVERRIDES GAP: If ANY related skill exists, NEVER mark these as Explicit Gaps. Partial Matches must NOT be listed under 'critical_gaps'. They have their own 'partial_matches' json section.
 2. NO CONTRADICTIONS: A skill cannot appear in both matches and gaps. 
-3. EVIDENCE MUST BE REAL: Use actual resume context. BAD: "Extracted from profile". GOOD: "Worked with Django framework and REST API concepts", "Used Docker and Kubernetes for deployment".
-4. SUBSTITUTION IS MANDATORY: If Partial Match exists, ALWAYS include: Required Skill, Candidate Skill, Transferability (High/Medium/Low), Learning Curve, Explanation.
-5. ACTION PLAN MUST BE PRACTICAL: BAD: "Learn cloud". GOOD: "Deploy a Dockerized Django app on AWS EC2 using Nginx and GitHub Actions CI/CD".
+3. EVIDENCE MUST BE REAL: Extract actual phrases/tools from resume. BAD: "Extracted from profile", "Related ecosystem tools". GOOD: "Worked with Django and REST API concepts", "Used Docker and Kubernetes for deployment".
+4. SUBSTITUTION IS MANDATORY: If Partial Match exists -> ALWAYS include: Required Skill, Candidate Skill (MUST BE SPECIFIC TOOLS), Transferability, Learning Curve, Explanation.
+5. ACTION PLAN MUST BE PRACTICAL: Each suggestion must include: Exact tech stack, Real deployment or project.
 6. HIRE SIGNAL RULE: Score > 80 -> Strong Hire. Score 60-80 -> Potential Hire. Score < 60 -> Needs Improvement.
 </s>
 <|user|>
@@ -241,7 +259,8 @@ Format required (STRICT JSON ONLY):
   "confidence_score": "High | Medium | Low",
   "hire_signal": "Strong Hire | Potential Hire | Needs Improvement | Not Ready",
   "strong_matches": [{{"skill": "...", "level": "Beginner | Intermediate | Advanced", "reason": "...", "evidence": "Specific evidence from resume"}}],
-  "critical_gaps": [{{"skill": "...", "classification": "Explicit Gap | Partial Match | Weak Match", "explanation": "...", "evidence": "..."}}],
+  "partial_matches": [{{"skill": "...", "reason": "...", "evidence": "Specific evidence from resume"}}],
+  "critical_gaps": [{{"skill": "...", "classification": "Explicit Gap | Weak Match", "explanation": "...", "evidence": "..."}}],
   "substitutable_skills": [{{"required": "...", "candidate": "...", "transferability": "High | Medium | Low", "learning_curve": "...", "explanation": "..."}}],
   "inferred_skills": [{{"skill": "...", "derived_from": "...", "reason": "..."}}],
   "recruiter_insights": ["..."],
@@ -273,20 +292,24 @@ Format required (STRICT JSON ONLY):
             print(f"HF Gen API Exception: {str(e)}")
             
         # Fallback ensuring clean group-level response
-        critical_gaps = []
+        partial_matches = []
         for s in current["partial_skills"]:
-            critical_gaps.append({"skill": s.replace('_', ' ').title(), "classification": "Partial Match", "explanation": "Candidate demonstrates foundational exposure through related tools.", "evidence": "Related ecosystem tools detected in candidate profile"})
+            evidence_str = ", ".join(current["evidence_map"].get(s, ["foundational concepts"]))
+            partial_matches.append({"skill": s.replace('_', ' ').title(), "evidence": f"Candidate possesses exposure via '{evidence_str}'", "reason": f"Demonstrates core competency without full ecosystem scope via {evidence_str}"})
+            
+        critical_gaps = []
         for s in current["missing_skills"]:
             critical_gaps.append({"skill": s.replace('_', ' ').title(), "classification": "Explicit Gap", "explanation": "This ecosystem capability is completely missing from the candidate's core stack.", "evidence": "No related tools or abstract domains matched"})
             
         substitutions = []
         for s in current["partial_skills"]:
+             candidate_skill = ", ".join(current["evidence_map"].get(s, ["adjacent tools"]))
              substitutions.append({
                  "required": s.replace('_', ' ').title(), 
-                 "candidate": "Related Ecosystem Tools", 
+                 "candidate": candidate_skill, 
                  "transferability": "High", 
                  "learning_curve": "Minimal upskilling required; core concepts align.", 
-                 "explanation": "Candidate possesses adjacent capability which translates easily to this requirement."
+                 "explanation": f"Candidate possesses adjacent capability which translates easily to the {s.replace('_', ' ').title()} requirement."
              })
              
         action_plan = []
@@ -295,12 +318,18 @@ Format required (STRICT JSON ONLY):
         if not action_plan and current["partial_skills"]:
             action_plan.append({"type": "Project", "title": f"Deepen {current['partial_skills'][0].replace('_', ' ').title()} expertise", "description": "Deploy a comprehensive project utilizing native stack components over foundational abstractions.", "impact": "Converts partial foundational experience into mastery."})
             
+        strong_matches = []
+        for s in current["strong_skills"]:
+            evidence_str = ", ".join(current["evidence_map"].get(s, [s]))
+            strong_matches.append({"skill": s.replace('_', ' ').title(), "level": "Intermediate", "reason": "Demonstrated capability in this required domain group.", "evidence": f"Experience aligned via '{evidence_str}' usage extracted from profile."})
+
         return {
             "refined_match_summary": current["explanation"],
             "match_score": current['score'],
             "confidence_score": "Medium",
             "hire_signal": "Strong Hire" if current['score'] > 80 else "Potential Hire" if current['score'] >= 60 else "Needs Improvement",
-            "strong_matches": [{"skill": s.replace('_', ' ').title(), "level": "Intermediate", "reason": "Demonstrated capability in this required domain group.", "evidence": "Extracted related foundational experience from candidate profile"} for s in current["strong_skills"]],
+            "strong_matches": strong_matches,
+            "partial_matches": partial_matches,
             "critical_gaps": critical_gaps,
             "substitutable_skills": substitutions,
             "inferred_skills": [],
