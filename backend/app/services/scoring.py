@@ -115,14 +115,17 @@ class ScoringEngine:
                     
                     # CLOUD
                     if group_name == "cloud":
-                        if any(k in resume_lower for k in ["aws", "gcp", "azure"]):
-                            if any(k in resume_lower for k in ["deploy", "deployment", "ec2", "hosting", "production"]):
+                        if any(re.search(rf'\b{re.escape(k)}\b', resume_lower) for k in ["aws", "gcp", "azure"]):
+                            if any(re.search(rf'\b{re.escape(k)}\b', resume_lower) for k in ["deploy", "deployment", "ec2", "hosting", "production"]):
                                 strong_groups.add(group_name)
                             else:
                                 partial_groups.add(group_name)
                                 missing_groups.add("cloud deployment")
                         else:
                             partial_groups.add(group_name)
+                            # FIX 4: Cloud Fix
+                            if not any(re.search(rf'\b{re.escape(k)}\b', resume_lower) for k in ["deploy", "deployment", "hosting", "ec2", "production"]):
+                                missing_groups.add("cloud deployment")
                             
                     # AI/ML
                     elif group_name == "ai_and_ml":
@@ -160,8 +163,9 @@ class ScoringEngine:
                         else:
                             partial_groups.add(group_name)
                             
+                        # FIX 3: DevOps Fix (CI/CD)
                         if any(req in required_kws for req in ["ci", "cd", "pipelines", "ci/cd"]):
-                            if not any(m in matched_kws for m in ["ci", "cd", "pipelines", "ci/cd"]):
+                            if not any(re.search(rf'\b{re.escape(m)}\b', resume_lower) for m in ["ci", "cd", "pipelines", "ci/cd"]):
                                 missing_groups.add("ci/cd pipelines")
                             
                     # BACKEND
@@ -186,7 +190,9 @@ class ScoringEngine:
                         if proxy_kws:
                             partial_groups.add(group_name)
                             evidence_map[group_name] = proxy_kws
-                            missing_groups.add("cloud deployment")
+                            # FIX 4: Cloud Fix
+                            if not any(re.search(rf'\b{re.escape(k)}\b', resume_lower) for k in ["deploy", "deployment", "hosting", "ec2", "production"]):
+                                missing_groups.add("cloud deployment")
                         else:
                             missing_groups.add(group_name)
                     else:
@@ -238,10 +244,10 @@ class ScoringEngine:
         final_score = round(min(max(final_score, 0), 100), 2)
         
         # HARD SCORE LIMITS
-        if resume_keywords['partial_matches']:
+        if resume_keywords['missing_areas']:
             final_score = min(final_score, 90)
             
-        if resume_keywords['missing_areas']:
+        if any(g in ["ci/cd pipelines", "cloud deployment"] for g in resume_keywords['missing_areas']):
             final_score = min(final_score, 85)
 
         # Generate dynamic, recruiter-style multi-sentence analysis
@@ -255,10 +261,12 @@ class ScoringEngine:
 
         if resume_keywords['missing_areas']:
             gaps_str = ", ".join([sk.title() for sk in resume_keywords['missing_areas'][:3]])
+            # FIX 7: Summary Fix
+            base_exp += f" The profile shows strong alignment with core requirements, but with some missing production-level capabilities in areas like {gaps_str}."
             if final_score > 60:
-                base_exp += f" While the profile is strong overall, the absence of explicit experience with {gaps_str} might place them at a slight disadvantage compared to perfectly aligned peers."
+                base_exp += " This might place them at a slight disadvantage compared to candidates with full ecosystem exposure."
             else:
-                base_exp += f" A significant hurdle is the lack of visible experience with critical requirements like {gaps_str}. The candidate must bridge this gap to be considered competitive."
+                base_exp += " Bridging these gaps is critical for maintaining competitiveness in the screening phase."
         elif resume_keywords['partial_matches']:
             base_exp += " The candidate shows strong alignment with core requirements, with some areas requiring deeper ecosystem exposure."
         else:
@@ -305,12 +313,11 @@ class ScoringEngine:
 You are a senior AI recruiter. Return ONLY valid JSON matching the schema exactly. Do NOT include markdown blocks.
 
 CRITICAL RULES:
-1. PARTIAL MATCH OVERRIDES GAP: If ANY related skill exists, NEVER mark these as Explicit Gaps. Partial Matches must NOT be listed under 'critical_gaps'. They have their own 'partial_matches' json section.
-2. NO CONTRADICTIONS: A skill cannot appear in both matches and gaps. If a skill is listed in partial_matches, you MUST classify it as Partial Match. Do NOT upgrade it to Strong Match.
-3. EVIDENCE MUST BE REAL: Extract actual phrases/tools from resume. BAD: "Extracted from profile", "Related ecosystem tools". GOOD: "Worked with Django and REST API concepts", "Used Docker and Kubernetes for deployment".
-4. SUBSTITUTION IS MANDATORY: If Partial Match exists -> ALWAYS include: Required Skill, Candidate Skill (MUST BE SPECIFIC TOOLS), Transferability, Learning Curve, Explanation.
-5. ACTION PLAN MUST BE PRACTICAL: Each suggestion must include: Exact tech stack, Real deployment or project.
-6. HIRE SIGNAL RULE: Score > 80 -> Strong Hire. Score 60-80 -> Potential Hire. Score < 60 -> Needs Improvement.
+1. NO CONTRADICTIONS: A skill cannot appear in both matches and gaps. If a skill is listed in partial_matches, you MUST classify it as Partial Match. Do NOT upgrade it to Strong Match.
+2. EVIDENCE MUST BE REAL: Extract actual phrases/tools from resume. BAD: "Extracted from profile", "Related ecosystem tools". GOOD: "Worked with Django and REST API concepts", "Used Docker and Kubernetes for deployment".
+3. SUBSTITUTION IS MANDATORY: If Partial Match exists -> ALWAYS include: Required Skill, Candidate Skill (MUST BE SPECIFIC TOOLS), Transferability, Learning Curve, Explanation.
+4. ACTION PLAN MUST BE PRACTICAL: Each suggestion must include: Exact tech stack, Real deployment or project.
+5. HIRE SIGNAL RULE: Score > 80 -> Strong Hire. Score 60-80 -> Potential Hire. Score < 60 -> Needs Improvement.
 </s>
 <|user|>
 Analyze this candidate.
