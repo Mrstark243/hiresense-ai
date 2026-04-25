@@ -1,8 +1,9 @@
 import re
 import os
+import time
 import requests
 import numpy as np
-from typing import List, Dict
+from typing import List, Dict, Optional
 from numpy.linalg import norm
 from ..config import settings
 
@@ -209,7 +210,7 @@ class ScoringEngine:
             "evidence_map": evidence_map
         }
 
-    def analyze(self, resume_text: str, jd_text: str) -> Dict:
+    def analyze(self, resume_text: str, jd_text: str, retrieved_context: Optional[List[Dict]] = None) -> Dict:
         print("DEBUG: Sending text to Hugging Face API for vector embeddings...")
         resume_emb = self.get_embedding(resume_text)
         jd_emb = self.get_embedding(jd_text)
@@ -287,7 +288,7 @@ class ScoringEngine:
             "suggestions": self.generate_suggestions(resume_keywords['strong_matches'], resume_keywords['missing_areas'], resume_keywords['partial_matches'])
         }
 
-        llm_insights = self.generate_llm_insights(resume_text, jd_text, current_analysis)
+        llm_insights = self.generate_llm_insights(resume_text, jd_text, current_analysis, retrieved_context=retrieved_context)
 
         return {
             "score": final_score,
@@ -301,13 +302,25 @@ class ScoringEngine:
             "suggestions": current_analysis["suggestions"]
         }
 
-    def generate_llm_insights(self, resume_text: str, jd_text: str, current: Dict) -> Dict:
-        # Use a faster, highly reliable model for JSON instruction following on free tier
-        api_url = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
+    def generate_llm_insights(self, resume_text: str, jd_text: str, current: Dict, retrieved_context: Optional[List[Dict]] = None) -> Dict:
+        """Generate LLM-powered insights with retry logic and model fallback chain."""
+        import json
         
-        # Limit text length to avoid token limits on free HF Inference API
-        safe_resume = resume_text[:1800]
-        safe_jd = jd_text[:1200]
+        # Model fallback chain: try zephyr first, then mistral
+        model_chain = [
+            "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta",
+            "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2",
+        ]
+        
+        # Limit text length to avoid token limits on free HF Inference API (trimmed ~30%)
+        safe_resume = resume_text[:1200]
+        safe_jd = jd_text[:800]
+        
+        # Build retrieved context block for RAG-augmented prompt
+        context_block = ""
+        if retrieved_context:
+            context_pieces = [f"- {rc['chunk']}" for rc in retrieved_context[:5]]
+            context_block = "\n\nRelevant Resume Excerpts (retrieved via semantic search):\n" + "\n".join(context_pieces)
         
         prompt = f"""<|system|>
 You are a senior AI recruiter. Return ONLY valid JSON matching the schema exactly. Do NOT include markdown blocks.
@@ -322,7 +335,7 @@ CRITICAL RULES:
 <|user|>
 Analyze this candidate.
 Resume: {safe_resume}
-Job Description: {safe_jd}
+Job Description: {safe_jd}{context_block}
 Pre-processed Base Score: {current['score']}%
 
 IMPORTANT: You are given Preprocessed Skill Groups:
@@ -349,27 +362,43 @@ Format required (STRICT JSON ONLY):
 </s>
 <|assistant|>
 {{"""
-        import json
-        try:
-            print("DEBUG: Calling HF Instruct model for RAG insights...")
-            response = requests.post(
-                api_url, 
-                headers=self.headers, 
-                json={"inputs": prompt, "parameters": {"max_new_tokens": 1000, "return_full_text": False, "temperature": 0.1}}, 
-                timeout=25
-            )
-            if response.status_code == 200:
-                result = response.json()
-                generated_text = "{" + result[0]['generated_text'].strip()
+        
+        # Retry logic with model fallback chain
+        for model_url in model_chain:
+            model_name = model_url.split("/")[-1]
+            for attempt in range(2):  # max 2 attempts per model (original + 1 retry)
+                try:
+                    attempt_label = "retry" if attempt > 0 else "initial"
+                    print(f"DEBUG: Calling HF model {model_name} ({attempt_label}) for LLM insights...")
+                    response = requests.post(
+                        model_url, 
+                        headers=self.headers, 
+                        json={"inputs": prompt, "parameters": {"max_new_tokens": 1000, "return_full_text": False, "temperature": 0.1}}, 
+                        timeout=25
+                    )
+                    if response.status_code == 200:
+                        result = response.json()
+                        generated_text = "{" + result[0]['generated_text'].strip()
+                        
+                        # Further cleanup to ensure we can parse
+                        generated_text = generated_text.replace("```json", "").replace("```", "").strip()
+                        
+                        parsed = json.loads(generated_text)
+                        parsed["response_source"] = "llm"
+                        return parsed
+                    else:
+                        print(f"HF Gen API Error ({model_name}): {response.status_code} - {response.text}")
+                except Exception as e:
+                    print(f"HF Gen API Exception ({model_name}, attempt {attempt+1}): {str(e)}")
                 
-                # Further cleanup to ensure we can parse
-                generated_text = generated_text.replace("```json", "").replace("```", "").strip()
-                
-                return json.loads(generated_text)
-            else:
-                print(f"HF Gen API Error: {response.status_code} - {response.text}")
-        except Exception as e:
-            print(f"HF Gen API Exception: {str(e)}")
+                # If first attempt failed and we have a retry left, wait 5 seconds
+                if attempt == 0:
+                    print(f"DEBUG: Retrying {model_name} in 5 seconds...")
+                    time.sleep(5)
+            
+            print(f"DEBUG: Model {model_name} exhausted. Trying next model in chain...")
+        
+        print("DEBUG: All LLM models failed. Using fallback template.")
             
         # Fallback ensuring clean group-level response
         partial_matches = []
@@ -425,7 +454,8 @@ Format required (STRICT JSON ONLY):
             "substitutable_skills": substitutions,
             "inferred_skills": [],
             "recruiter_insights": ["The candidate requires more targeted ecosystem exposure to clear the screening phase."],
-            "action_plan": action_plan
+            "action_plan": action_plan,
+            "response_source": "fallback"
         }
 
     def get_match_level(self, score: float) -> str:
@@ -449,7 +479,7 @@ Format required (STRICT JSON ONLY):
         # 2. Leverage Existing Strengths
         if strong_skills:
             top_strength = strong_skills[0].replace('_', ' ').title()
-            suggestions.append(f"SHOWCASE EXPERTISE: You demonstrated a strong foundation in '{top_strength}'. Don't just list it—prove it. Add metrics to measure scale and impact.")
+            suggestions.append(f"SHOWCASE EXPERTISE: You demonstrated a strong foundation in '{top_strength}'. Don't just list it\u2014prove it. Add metrics to measure scale and impact.")
         
         # 3. Actionable Portfolio tip
         if "cloud" in missing_skills or "devops" in missing_skills:

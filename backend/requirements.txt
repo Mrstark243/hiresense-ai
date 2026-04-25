@@ -8,6 +8,4 @@ pandas
 pydantic
 pydantic-settings
 python-dotenv
-axios
-chromadb
 requests
